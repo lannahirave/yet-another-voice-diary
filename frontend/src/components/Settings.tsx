@@ -5,6 +5,7 @@ import { subscribeModelProgress } from '../api/models'
 import {
   useConfigQuery,
   useModelLifecycleMutation,
+  usePreloadOnStartMutation,
   useSelectProviderMutation,
   useSetThresholdMutation,
   useStorageInfoQuery,
@@ -348,6 +349,7 @@ export function Settings() {
   const [savingProvider, setSavingProvider] = useState<ProviderKind | null>(null)
   const [savingThreshold, setSavingThreshold] = useState(false)
   const [savingUnload, setSavingUnload] = useState(false)
+  const [savingPreload, setSavingPreload] = useState(false)
   const [modelAction, setModelAction] = useState<ProviderKind | null>(null)
   const [progressByKind, setProgressByKind] = useState<Record<string, number>>({})
 
@@ -356,6 +358,7 @@ export function Settings() {
   const selectProviderMutation = useSelectProviderMutation()
   const setThresholdMutation = useSetThresholdMutation()
   const unloadAfterStopMutation = useUnloadAfterStopMutation()
+  const preloadOnStartMutation = usePreloadOnStartMutation()
   const modelLifecycleMutation = useModelLifecycleMutation()
 
   const config = configQuery.data ?? null
@@ -516,8 +519,22 @@ export function Settings() {
     }
   }
 
+  const commitPreloadOnStart = async (next: boolean) => {
+    if (!config || savingPreload) return
+    setSavingPreload(true)
+    setActionError(null)
+    try {
+      await preloadOnStartMutation.mutateAsync(next)
+    } catch (error) {
+      setActionError(configErrorMessage(error, t('settings.errSaveSetting'), t))
+    } finally {
+      setSavingPreload(false)
+    }
+  }
+
   const thresholdControlsDisabled = loadingConfig || !config || savingThreshold
   const unloadAfterStop = config?.unload_models_after_stop ?? false
+  const preloadOnStart = config?.preload_on_start ?? false
   const storage = storageQuery.data ?? null
 
   const renderModelCards = (
@@ -637,6 +654,21 @@ export function Settings() {
                 on={unloadAfterStop}
                 onChange={(next) => void commitUnloadAfterStop(next)}
                 disabled={loadingConfig || !config || savingUnload}
+              />
+            </div>
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>
+                  {t('settings.preloadOnStart')}
+                </div>
+                <div style={stS.settingDesc}>
+                  {t('settings.preloadOnStartDesc')}
+                </div>
+              </div>
+              <Toggle
+                on={preloadOnStart}
+                onChange={(next) => void commitPreloadOnStart(next)}
+                disabled={loadingConfig || !config || savingPreload}
               />
             </div>
             <Divider />

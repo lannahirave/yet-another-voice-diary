@@ -21,4 +21,10 @@ export const setUnloadAfterStop = (value: boolean) =>
     body: JSON.stringify({ value }),
   })
 
+export const setPreloadOnStart = (value: boolean) =>
+  apiFetch<ApiConfig>('/config/preload-on-start', {
+    method: 'POST',
+    body: JSON.stringify({ value }),
+  })
+
 export const getStorageInfo = () => apiFetch<ApiStorageInfo>('/config/storage')

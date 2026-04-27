@@ -1,6 +1,8 @@
 """FastAPI application factory."""
 from __future__ import annotations
 
+import threading
+import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -28,6 +30,44 @@ from .routers import audio_ws, config_rt, contacts, models, queue, search, sessi
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     yield
+
+
+def _startup_preload(app: FastAPI) -> None:
+    """Spawn background threads to preload configured providers."""
+    import logging
+
+    _log = logging.getLogger(__name__)
+    from .routers.models import _LoadState, _run_load
+
+    if not hasattr(app.state, "load_states"):
+        app.state.load_states = {
+            kind: _LoadState() for kind in app.state.providers
+        }
+
+    for kind, provider in app.state.providers.items():
+        state = getattr(provider, "_state", "UNLOADED")
+        if state not in ("UNLOADED", "ERROR"):
+            continue
+        load = app.state.load_states[kind]
+        try:
+            provider._state = "LOADING"  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        try:
+            provider._error = None  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        load.progress = 0.05
+        load.started_at = time.monotonic()
+        load.event.clear()
+        thread = threading.Thread(
+            target=_run_load,
+            args=(provider, load),
+            name=f"preload-{kind}",
+            daemon=True,
+        )
+        thread.start()
+        _log.info("preloading %s model %s", kind, getattr(provider, "model_id", "?"))
 
 
 def create_app(config: Optional[BackendConfig] = None) -> FastAPI:
@@ -58,6 +98,9 @@ def create_app(config: Optional[BackendConfig] = None) -> FastAPI:
         "diarization": diarization,
         "embedding": embedding,
     }
+
+    if config.providers.preload_on_start:
+        _startup_preload(app)
 
     app.add_middleware(
         CORSMiddleware,

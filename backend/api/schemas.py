@@ -175,6 +175,7 @@ class ConfigOut(BaseModel):
     speaker_identification_threshold: float
     chunk_duration_ms: int
     unload_models_after_stop: bool = False
+    preload_on_start: bool = False
     providers: list[ProviderStatus]
 
 
@@ -183,6 +184,10 @@ class ThresholdUpdate(BaseModel):
 
 
 class UnloadAfterStopUpdate(BaseModel):
+    value: bool
+
+
+class PreloadOnStartUpdate(BaseModel):
     value: bool
 
 

@@ -97,6 +97,7 @@ export interface ApiConfig {
   speaker_identification_threshold: number
   chunk_duration_ms: number
   unload_models_after_stop: boolean
+  preload_on_start: boolean
   providers: ApiProviderStatus[]
 }
 

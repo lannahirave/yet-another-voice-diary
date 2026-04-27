@@ -14,7 +14,12 @@
 
 ## Next Work Instructions
 
-Do these in order. Keep changes small and verify after each step.
+Most items below are done. The remaining work is:
+
+1. **Fix ECAPA embedding model path** — `WinError 123` in `docs/voice-identification-environment.md`. Without this, speaker identification is degraded (ASR and VAD work fine).
+2. **Validate real ML pipeline** with microphone audio after ECAPA fix (items 1-3 below were checked synthetically via e2e tests but real mic validation requires the path fix).
+3. **True download-progress tracking** — SSE currently uses synthetic interpolation.
+4. **Optional: Phase 7 packaging** — document only.
 
 ### 1. Validate the real ML environment ✅ DONE
 
@@ -115,24 +120,23 @@ Mic + system-loopback both flow through the WS pipeline now. Highlights:
 
 ### 5b. Carryovers from voice-recognition debugging session
 
-Tracked in `docs/voice-recognition-review.md`, surfaced here so they don't get lost:
+Tracked in `docs/voice-recognition-review.md`. Three of four items are resolved:
 
-- **256 ms session-end flush bug** — `_build_speaker_segments` runs on
-  `end_session()` even when the buffered tail is below `vad_min_utterance_ms`,
-  producing junk embeddings that pollute `voice_profiles` and the unknown
-  queue. Gate the end-of-session flush on the same min-duration check used
-  mid-stream.
-- **Lower default `speaker_identification_threshold`** — `backend/config.py`
-  still ships `0.82`; empirically calibrated runtime value is `0.55`. Decide
-  on a defensible default once the DIFF distribution is collected and update
-  the file.
-- **Store `model_id` + `dim` on `voice_profiles`** — and reject lookups whose
-  embedding shape/model differs. Today the resolver silently compares vectors
-  from different embedding models if the user swaps providers.
-- **Evaluate per-speaker centroid vs best-of-N profile match** — current
-  resolver takes max cosine across stored profiles per contact. Compare
-  against a single centroid (mean of profiles) to see which is more robust
-  on real noisy data.
+- ✅ **256 ms session-end flush bug** — FIXED. `end_session()` now gates on
+  `vad_min_utterance_ms` in `pipeline/coordinator.py:101-121`, same floor as
+  the falling-edge path. Sub-minimal tails are discarded.
+- ✅ **Lower default `speaker_identification_threshold`** — `config.py:70`
+  ships `0.5`. The old hardcoded `0.82` was replaced; runtime is further
+  calibrated via `/config/threshold`.
+- ✅ **Store `model_id` + `dim` on `voice_profiles`** — Migration `004` adds
+  `model_id` (`TEXT NOT NULL DEFAULT 'ecapa'`) and `embedding_dim` (`INTEGER`)
+  columns + composite index. Resolver filters by both in `_load_voice_profiles()`;
+  `get_candidates()` adds a cross-model fallback for the suggest surface while
+  `resolve()` stays strict.
+- 🟡 **Evaluate per-speaker centroid vs best-of-N profile match** — current
+  resolver takes max cosine across stored profiles per contact (best-of-N).
+  Centroid (mean of profiles) has not been evaluated yet on real noisy data.
+  Low priority — blocked until ECAPA environment is stable.
 
 ### 6. Optional packaging pass
 
@@ -147,11 +151,11 @@ Do this only after real ML validation is stable.
 
 **Frontend (Phase 4 complete — real API, Electron, mic capture):**
 - ✅ `web_app/frontend/package.json`, `web_app/frontend/vite.config.ts`, `web_app/frontend/tsconfig.*`, `web_app/frontend/tsconfig.electron.json`, `web_app/frontend/index.html` — buildable project on `127.0.0.1:5173`
-- ✅ `web_app/frontend/src/components/*.tsx` — 7 typed screens (`Sidebar`, `CurrentSession`, `AllSessions`, `UnknownQueue`, `Contacts`, `Search`, `Settings`) + `shared/{Avatar,Waveform,Toggle}.tsx` — all hooked to real API
+- ✅ `web_app/frontend/src/components/*.tsx` — 7 typed screens (`Sidebar`, `CurrentSession`, `AllSessions`, `UnknownQueue`, `Contacts`, `Search`, `Settings`) + `shared/{Avatar,AudioLevelFooter,Toggle}.tsx` — all hooked to real API
 - ✅ `web_app/frontend/src/api/mock.ts` — typed fixtures kept for reference; `client.ts`, `sessions.ts`, `contacts.ts`, `queue.ts`, `search.ts`, `config.ts`, `websocket.ts` — real HTTP/WS layer
 - ✅ `web_app/frontend/src/api/adapters.ts` — `adaptContact`, `adaptSession`, `adaptUtterance`, `adaptQueueItem`; live utterances now map `speaker_contact_id` separately from `speaker_segment_id`
 - ✅ `web_app/frontend/src/types/api.ts` — Pydantic-mirrored API response shapes
-- ✅ `web_app/frontend/src/context/ContactsContext.tsx` — fetch `/contacts` once, expose `contactById()` + `refresh()`
+- ✅ `web_app/frontend/src/query/{client,keys,contacts,sessions,queue,search,config}.ts` — TanStack React Query v5 hooks + optimistic mutations. Supersedes `ContactsContext` / `EventBusContext`.
 - ✅ `web_app/frontend/src/styles/{tokens,global}.css` — warm-cream palette + scrollbar/keyframes/tweak-panel CSS
 - ✅ `web_app/frontend/src/utils/{format,highlight}.tsx`, `hooks/useScreen.ts`
 - ✅ `web_app/frontend/electron/{main,preload,python-manager}.ts` — Electron wrapper; spawns Python backend, health-polls `/health`, loads Vite URL in dev
@@ -159,7 +163,7 @@ Do this only after real ML validation is stable.
 - ✅ `web_app/frontend/src/components/Settings.tsx` — loads live config from `/config`, reflects provider states, and persists threshold/provider changes through the real API
 - ✅ `web_app/backend/scripts/seed_dev_db.py` — seeds SQLite with 5 contacts, 3 sessions, 14 utterances (speaker_segments + proper FK chain)
 
-**Backend (Phase 2 complete — FastAPI + repos + Whisper Turbo; Phase 5 partial):**
+**Backend (Phase 2 complete — FastAPI + repos + Whisper Turbo; Phase 5/6 complete with one remaining path bug):**
 - ✅ Domain models (`backend/models.py`), SQLite schema, `Database` wrapper, `SimilarityMatcher`, `PipelineCoordinator` event bus (+ `off()`), `BackendConfig` dataclasses.
 - ✅ `backend/pyproject.toml` — fastapi/uvicorn/pydantic deps, `[dev]` + `[ml]` extras.
 - ✅ `backend/run.py` — binds `127.0.0.1:8765` via `uvicorn.run(..., factory=True)`.
@@ -179,15 +183,20 @@ Do this only after real ML validation is stable.
 - ✅ `GET /unknown-queue` now returns voiceprint-clustered groups (greedy centroid linkage on cosine similarity, threshold tied to `speaker_identification_threshold`); each cluster carries the longest utterance transcript, aggregated duration, and fragment count. Resolve/skip are batch endpoints (`POST /unknown-queue/resolve|skip`) and a resolution triggers a cascade pass that auto-identifies any remaining unresolved segments now matching the freshly added voice profile (`identification/clustering.py`, `9801877`).
 - ✅ Frontend queue card consumes the cluster shape, shows the picked transcript and duration, and the existing-contact picker / new-contact / skip actions all operate on the full cluster. `UnknownQueue` refetches after resolve so cascaded auto-identifications are reflected.
 - ✅ Focused verification now covers coordinator buffering, diarization-aware speaker grouping, websocket stop-flush behavior, queue clustering + cascade resolve, and backend e2e model/audio flows.
-- ❌ **Remaining Phase 5/6 gaps:**
-  - validate Silero/ECAPA/PyAnnote behavior with the real `[ml]` environment and microphone audio
-  - improve true model download progress; current SSE reports one state snapshot
-  - replace remaining simulated Settings sections unrelated to `/config` or `/models`
+- ✅ **Simulated Settings sections removed** — backup toggle, ASR default lang, shortcut, open-in-finder, choose-location all removed from `Settings.tsx`. Interface language (UA/EN via i18next) is the only non-`/config` setting and is real.
+- 🟡 **Remaining Phase 5/6 gaps:**
+  - **ECAPA embedding model fails to load** — `WinError 123` malformed path (`pretrained_models\\D:\\MS_diploma\\web_app\\pretrained_models\\speechbrain_spkrec-ecapa-voxceleb`). Mixed relative-absolute path composition in the SpeechBrain cache layer. ASR and VAD work; diarization may work; identification is degraded or skipped. See `docs/voice-identification-environment.md`.
+  - Validate Silero/PyAnnote behavior with real `[ml]` environment and microphone audio (blocked by ECAPA until path is fixed)
+  - Improve true model download progress — current SSE uses synthetic interpolation over a 45 s ramp rather than tracking actual download bytes
 
 **Docs:**
-- `docs/voice_diary_architecture.md` — 6-layer design, recommends Tauri
-- `docs/voice_diary_ui_requirements.md` — 6 screens, FR-SB/TR/SL/UQ/CT/SR/ST/ML-* IDs
-- `uploads/DESIGN-cursor.md` — warm-cream palette; proprietary CursorGothic + jjannon + berkeleyMono (unlicensed — see §Fonts)
+- `docs/voice_diary_architecture.md` — 6-layer design, SQLite schema, model recommendations
+- `docs/voice_diary_ui_requirements.md` — 6 screens, 28 FR-* functional requirements
+- `docs/DESIGN-cursor.md` — warm-cream palette; proprietary CursorGothic + jjannon + berkeleyMono (unlicensed — see §Fonts)
+- `docs/voice-recognition-review.md` — speaker ID deep-dive, 9 failure root causes, empirical threshold calibration
+- `docs/voice-identification-environment.md` — runtime env, dual `.venv`, ECAPA path blocker
+- `docs/e2e-test-findings.md` — 3 non-obvious bugs fixed during e2e test development
+- `docs/record_out.wav` — test audio (16kHz mono float32) for e2e pipeline tests
 
 **Benchmark harness already in repo:** `benchmark_codemixing/tracks/asr/` — use it to pick the default ASR model before wiring it into the backend.
 
@@ -215,8 +224,10 @@ Phases 5–7 are post-MVP polish: real speaker ID, settings persistence, packagi
 | HTTP layer | **FastAPI + uvicorn** on `127.0.0.1:8765` | `host='127.0.0.1'` explicit — no LAN exposure |
 | DB concurrency | Per-request SQLite connection (FastAPI dependency) | Current single-conn + `check_same_thread=False` races under concurrency |
 | Fonts (MVP) | Keep Google Lora + JetBrains Mono (current) | CursorGothic/jjannon are unlicensed proprietary; add `@font-face` hook for future drop-in |
-| ASR default | **Decide after running `benchmark_codemixing`** | Don't hardcode Whisper-medium without measuring WER on UK/EN code-mix |
+| ASR default | **faster-whisper `large-v3-turbo`** | ~809M params, int8 CPU / fp16 CUDA, strong UK/EN code-mix, ~8× decode speedup over large-v3 |
 | Packaging | **Out of scope for MVP** | PyInstaller + PyTorch bundle is ~3 GB and flaky; document only |
+| State management | **TanStack React Query v5** | Server-state caching, optimistic mutations for responsive queue/contacts UX |
+| i18n | **i18next** with `uk` (default) + `en` | Detected via localStorage key `voice-diary:lang` then navigator |
 
 ---
 
@@ -270,11 +281,9 @@ web_app/
         Settings.tsx           ✅
         shared/
           Avatar.tsx           ✅ (extracted from CurrentSession.jsx)
-          Waveform.tsx         ✅ (extracted from CurrentSession.jsx)
+          AudioLevelFooter.tsx ✅ (mic + system audio meters)
           Toggle.tsx           ✅ (extracted from Settings.jsx)
-      context/
-        ContactsContext.tsx    ⬜ Phase 4 (needed when mock → real fetch)
-        EventBusContext.tsx    ⬜ Phase 4 (needed when WS events arrive)
+      context/                 ⬜ Phase 4 (superseded by React Query)
       utils/
         format.ts              ✅ (fmt, fmtTime)
         highlight.tsx          ✅ (single highlight() replaces hlText/hlMatch)
@@ -287,7 +296,7 @@ web_app/
 
 - `const { useState } = React;` → `import { useState, useEffect, useRef } from 'react'`
 - `Object.assign(window, { Sidebar })` → `export default Sidebar`
-- `VD.CONTACTS` / `VD.contact(id)` → `import { contacts, contactById } from '../api/mock'` (Phase 1), then `useContacts()` context in Phase 4
+- `VD.CONTACTS` / `VD.contact(id)` → `import { contacts, contactById } from '../api/mock'` (Phase 1), then React Query hooks (`useContactsData`, `useContactsListQuery`) in Phase 4
 - Preserve current localStorage `vd_state` screen persistence behavior via `useScreen()` hook
 - Inline style objects: `const csS: Record<string, React.CSSProperties> = { ... }`
 - `window.VD.fmt` / `fmtTime` → `utils/format.ts`
@@ -690,7 +699,7 @@ const [sessions, setSessions] = useState<Session[]>([])
 useEffect(() => { listSessions().then(setSessions) }, [])
 ```
 
-`ContactsContext` fetches `/contacts` once on mount, caches by id, exposes `contactById(id)` + `refresh()`. Call `refresh()` after merge/delete.
+Contacts were originally fetched via `ContactsContext` (fetch `/contacts` once, cache by id, expose `contactById(id)` + `refresh()`). This was superseded by TanStack React Query hooks (`useContactsData()`, `useContactsListQuery()`, `useContactUtterancesQuery()`) with optimistic mutations for create/delete/merge.
 
 ### AudioWebSocket
 
@@ -853,8 +862,7 @@ Implemented now:
 - Settings load/unload buttons for selected provider models
 
 Still pending:
-- real download-progress tracking
-- replacing remaining simulated settings sections unrelated to `/config` or `/models`
+- real download-progress tracking (currently uses synthetic 45 s interpolation instead of actual download bytes)
 
 ### Routes
 
@@ -895,7 +903,8 @@ Still pending:
 | PyAnnote 3.x is gated (HuggingFace token + license acceptance) | Use diarization-disabled mode as default; document token setup for advanced users |
 | `ScriptProcessorNode` glitches / deprecated | Listed; AudioWorklet migration is post-MVP |
 | `app.isPackaged` + `file://` breaks `fetch()` to `127.0.0.1` (mixed content in some configs) | Always load renderer via `http://localhost:5173` even in prod (bundle served by Python); or register custom protocol |
-| Chrome returns 48 kHz despite 16 kHz request | Detect `ctx.sampleRate` and resample (Phase 4.6) |
+| Chrome returns 48 kHz despite 16 kHz request | ✅ Resolved — `downsampleTo16k()` in `api/websocket.ts` handles resampling |
+| ECAPA embedding fails to load (`WinError 123`) | See `docs/voice-identification-environment.md` — SpeechBrain cache root composes a mixed relative/absolute path. Until fixed, speaker identification is degraded. Fix: patch the SpeechBrain model save dir or pre-download the model to a clean path. |
 | FAISS won't be packaged cross-platform | N/A — staying on numpy cosine until > 500 contacts (doc says so) |
 | PyTorch + CUDA vs. CPU-only: two build matrices | Ship CPU-only by default; GPU is opt-in via env |
 
@@ -916,11 +925,13 @@ Still pending:
 
 **Rewrite:**
 - ✅ `providers/asr.py` — Whisper Large-v3-Turbo (Phase 5.3, `1f9db8e`)
-- 🟡 `providers/diarization.py`, `providers/embedding.py` — real optional wrappers exist, but must be validated with `[ml]` dependencies and real audio
-- 🟡 `pipeline/vad.py` — attempts Silero when available, falls back to deterministic RMS; needs real-audio validation
+- 🟡 `providers/diarization.py`, `providers/embedding.py` — real optional wrappers work; embedding blocked by ECAPA path bug (`WinError 123`), see `docs/voice-identification-environment.md`
+- 🟡 `pipeline/vad.py` — Silero VADIterator works when `silero-vad` is installed; falls back to deterministic RMS. Needs real-audio validation only.
 - ✅ `identification/resolver.py::_load_voice_profiles()`, `_get_contact_name()` — wired to DB locally
-- 🟡 `PipelineCoordinator.process_chunk` — buffers until silence and flushes on session end; live WS path now resolves against DB voice profiles when real embeddings are loaded
+- ✅ `PipelineCoordinator.process_chunk` — buffers until silence, flushes on session end, runs diarization-aware per-speaker embeddings, resolves against DB voice profiles via `SpeakerResolver`. Full code path works; blocked on real embeddings by ECAPA path bug.
 - ✅ `Database` — per-request conn via `api/deps.py::get_db` (old `Database` still around for non-HTTP callers)
+- ✅ 5 migrations: schema, FTS triggers, audio source, voice profile metadata, diarization model
+- ✅ `backend/e2e-tests/` — 8 test files with real-model session-scoped fixtures
 
 **Build new:**
 - ✅ `pyproject.toml`, `run.py` (Phase 2, `1f9db8e`)
@@ -929,10 +940,10 @@ Still pending:
 - ✅ FTS5 sync triggers migration via `storage/fts_migration.py` (Phase 2, `1f9db8e`)
 - ✅ Electron project — `frontend/electron/{main,preload,python-manager}.ts`, `frontend/tsconfig.electron.json` (Phase 3, `35bfebb`)
 - ✅ Vite + React + TS project (Phase 1)
-- ✅ `ContactsContext` (Phase 4, `35bfebb`); `EventBusContext` — still deferred (unused without live WS events in UI)
+- ✅ `ContactsContext` (Phase 4, `35bfebb`); now superseded by React Query hooks (`query/contacts.ts`)
 - ✅ `frontend/src/api/{client,adapters,sessions,contacts,queue,search,config,websocket}.ts` (Phase 4, `35bfebb`)
 - ✅ `frontend/src/types/api.ts` (Phase 4, `35bfebb`)
-- ✅ `shared/Avatar`, `shared/Waveform`, `shared/Toggle` (Phase 1)
+- ✅ `shared/Avatar`, `shared/AudioLevelFooter`, `shared/Toggle` (Phase 1)
 - ✅ `utils/highlight.tsx`, `utils/format.ts` (Phase 1)
 - ✅ `backend/scripts/seed_dev_db.py` (Phase 4, `35bfebb`)
 - ✅ Backend config persistence (`config.py`, `api/app.py`, `api/routers/config_rt.py`) landed locally
@@ -950,8 +961,8 @@ Still pending:
 | `web_app/backend/api/app.py` | FastAPI factory — CORS, DI, lifecycle, and config bootstrap from disk |
 | `web_app/backend/api/routers/audio_ws.py` | Real-time bridge + live persistence into sessions / utterances / speaker_segments / unknown_queue |
 | `web_app/backend/storage/session_repo.py` | All session/utterance reads and writes, plus live speaker-segment inserts |
-| `web_app/backend/pipeline/coordinator.py` | Now buffers speech until silence / stop; still the main place to finish production VAD + resolver wiring |
-| `web_app/backend/identification/resolver.py` | Voice-profile loading and contact-name lookup now come from SQLite here |
-| `web_app/backend/providers/asr.py` | Biggest unknown — latency + WER on UK/EN code-mix |
+| `web_app/backend/pipeline/coordinator.py` | VAD endpointing state machine, diarization-aware utterance flush, resolver integration per `SpeakerResolver` — fully wired, blocked on real embeddings by ECAPA path bug |
+| `web_app/backend/identification/resolver.py` | Model-ID-scoped voice profile loading from SQLite BLOBs, source-track isolation, cross-model fallback for candidate suggestions |
+| `web_app/backend/providers/asr.py` | faster-whisper large-v3-turbo — working (int8 CPU / fp16 CUDA) |
 | `web_app/frontend/src/api/websocket.ts` | Every live-UI feature reads from this |
 | `web_app/frontend/src/components/Settings.tsx` | Real config-backed provider selection and threshold persistence now live here |

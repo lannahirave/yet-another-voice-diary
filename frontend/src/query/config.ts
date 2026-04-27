@@ -3,6 +3,7 @@ import {
   getConfig,
   getStorageInfo,
   selectProvider,
+  setPreloadOnStart,
   setThreshold,
   setUnloadAfterStop,
 } from '../api/config'
@@ -47,6 +48,18 @@ export function useUnloadAfterStopMutation() {
 
   return useMutation({
     mutationFn: (value: boolean) => setUnloadAfterStop(value),
+    onSuccess: async (config) => {
+      queryClient.setQueryData<ApiConfig>(queryKeys.config.current(), config)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.config.current() })
+    },
+  })
+}
+
+export function usePreloadOnStartMutation() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (value: boolean) => setPreloadOnStart(value),
     onSuccess: async (config) => {
       queryClient.setQueryData<ApiConfig>(queryKeys.config.current(), config)
       await queryClient.invalidateQueries({ queryKey: queryKeys.config.current() })

@@ -82,6 +82,7 @@ class ProviderConfig:
     asr_model_id: str = "large-v3-turbo"
     diarization_model_id: str = "pyannote"
     embedding_model_id: str = "ecapa"
+    preload_on_start: bool = False
 
     def __post_init__(self) -> None:
         self.diarization_model_id = normalize_diarization_model_id(

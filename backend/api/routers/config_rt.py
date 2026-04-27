@@ -9,6 +9,7 @@ from ...config import SUPPORTED_DIARIZATION_MODEL_IDS, normalize_diarization_mod
 from ...providers.diarization import create_diarization_provider
 from ..schemas import (
     ConfigOut,
+    PreloadOnStartUpdate,
     ProviderSelect,
     ProviderStatus,
     StorageInfoOut,
@@ -45,6 +46,7 @@ def get_config_rt(request: Request):
         speaker_identification_threshold=cfg.pipeline.speaker_identification_threshold,
         chunk_duration_ms=cfg.pipeline.chunk_duration_ms,
         unload_models_after_stop=cfg.pipeline.unload_models_after_stop,
+        preload_on_start=cfg.providers.preload_on_start,
         providers=[
             _provider_status(kind, provider) for kind, provider in providers.items()
         ],
@@ -63,6 +65,13 @@ def set_threshold(payload: ThresholdUpdate, request: Request):
 @router.post("/unload-after-stop", response_model=ConfigOut)
 def set_unload_after_stop(payload: UnloadAfterStopUpdate, request: Request):
     request.app.state.config.pipeline.unload_models_after_stop = bool(payload.value)
+    request.app.state.config.save()
+    return get_config_rt(request)
+
+
+@router.post("/preload-on-start", response_model=ConfigOut)
+def set_preload_on_start(payload: PreloadOnStartUpdate, request: Request):
+    request.app.state.config.providers.preload_on_start = bool(payload.value)
     request.app.state.config.save()
     return get_config_rt(request)
 
