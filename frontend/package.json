@@ -1,0 +1,57 @@
+{
+  "name": "voice-diary",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "test:unit": "vitest run",
+    "typecheck": "tsc -b --noEmit",
+    "electron:compile": "tsc -p tsconfig.electron.json && node scripts/prepare-electron-dist.mjs",
+    "electron:dev": "concurrently -k -n vite,electron \"vite\" \"wait-on http://127.0.0.1:5173 && npm run electron:compile && cross-env NODE_ENV=development electron .\"",
+    "electron:build": "tsc -b && vite build && npm run electron:compile && electron-builder"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.100.5",
+    "i18next": "^26.0.8",
+    "i18next-browser-languagedetector": "^8.2.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-i18next": "^17.0.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^8.2.0",
+    "cross-env": "^7.0.3",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.0",
+    "typescript": "^5.4.5",
+    "vite": "^5.3.1",
+    "vitest": "^4.1.5",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "ua.diploma.voice-diary",
+    "productName": "Voice Diary",
+    "directories": {
+      "output": "dist-app"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "extraResources": [],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    }
+  }
+}

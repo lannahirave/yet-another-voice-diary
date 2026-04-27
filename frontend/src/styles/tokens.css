@@ -1,0 +1,50 @@
+:root {
+  --color-surface-100: #f7f7f4;
+  --color-surface-200: #f2f1ed;
+  --color-surface-300: #ebeae5;
+  --color-surface-400: #e6e5e0;
+  --color-surface-500: #e1e0db;
+
+  --bg:          var(--color-surface-200);
+  --surface:     var(--color-surface-300);
+  --surface2:    var(--color-surface-400);
+  --surface3:    #dddcda;
+
+  --border:      rgba(38, 37, 30, 0.1);
+  --border-med:  rgba(38, 37, 30, 0.2);
+  --border-str:  rgba(38, 37, 30, 0.55);
+
+  --accent:      #f54e00;
+  --accent-dim:  rgba(245, 78, 0, 0.08);
+  --record:      #cf2d56;
+  --record-dim:  rgba(207, 45, 86, 0.09);
+  --green:       #1f8a65;
+  --amber:       #c08532;
+
+  --text:        #26251e;
+  --text-soft:   rgba(38, 37, 30, 0.78);
+  --text-muted:  rgba(38, 37, 30, 0.6);
+  --text-dim:    rgba(38, 37, 30, 0.42);
+
+  /* Fonts. Real CursorGothic/jjannon/berkeleyMono are unlicensed proprietary.
+     Keep the free stack; drop real files into /public/fonts/ + add @font-face later. */
+  --sans:  system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --serif: 'Lora', 'Iowan Old Style', Georgia, 'Times New Roman', ui-serif;
+  --mono:  'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  --sidebar-w: 220px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
+
+  --utterance-font: var(--sans);
+  --utt-padding: 11px 0;
+}

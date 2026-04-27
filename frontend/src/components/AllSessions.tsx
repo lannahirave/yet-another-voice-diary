@@ -1,0 +1,405 @@
+import { useEffect, useState } from 'react'
+import type { CSSProperties } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useContactsData } from '../query/contacts'
+import { useSessionUtterancesQuery, useSessionsListQuery } from '../query/sessions'
+import { Avatar } from './shared/Avatar'
+import { highlight } from '../utils/highlight'
+
+export function AllSessions() {
+  const { t } = useTranslation()
+  const { contactById } = useContactsData()
+  const sessionsQuery = useSessionsListQuery()
+  const [selected, setSelected] = useState<string | null>(null)
+  const [editing, setEditing] = useState<string | null>(null)
+  const [titles, setTitles] = useState<Record<string, string>>({})
+  const [searchText, setSearchText] = useState('')
+
+  const sessions = sessionsQuery.data ?? []
+
+  useEffect(() => {
+    if (sessions.length === 0) {
+      setSelected(null)
+      return
+    }
+    if (!selected || !sessions.some((session) => session.id === selected)) {
+      setSelected(sessions[0].id)
+    }
+  }, [sessions, selected])
+
+  const utterancesQuery = useSessionUtterancesQuery(selected)
+  const utterances = utterancesQuery.data ?? []
+  const session = sessions.find((item) => item.id === selected) ?? null
+  const filteredUtterances = utterances.filter(
+    (utterance) =>
+      !searchText ||
+      utterance.text.toLowerCase().includes(searchText.toLowerCase()),
+  )
+
+  return (
+    <div style={asS.root}>
+      <div style={asS.list}>
+        <div style={asS.listHeader}>
+          <span style={asS.listTitle}>{t('allSessions.title')}</span>
+          <span style={asS.listCount}>{sessions.length}</span>
+        </div>
+        {sessions.length === 0 && (
+          <div style={{ padding: '24px 18px', color: 'var(--text-dim)', fontSize: 13 }}>
+            {t('allSessions.empty')}
+          </div>
+        )}
+        {sessions.map((item) => {
+          const active = item.id === selected
+          const speakers = item.speakers
+            .map((speakerId) => contactById(speakerId))
+            .filter((contact): contact is NonNullable<typeof contact> => contact !== null)
+
+          return (
+            <div
+              key={item.id}
+              onClick={() => setSelected(item.id)}
+              style={{ ...asS.card, ...(active ? asS.cardActive : {}) }}
+            >
+              {active && <div style={asS.cardLine} />}
+              <div style={asS.cardTop}>
+                <div
+                  style={asS.cardTitle}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation()
+                    setEditing(item.id)
+                  }}
+                >
+                  {editing === item.id ? (
+                    <input
+                      autoFocus
+                      defaultValue={titles[item.id] ?? item.title}
+                      style={asS.titleInput}
+                      onBlur={(e) => {
+                        setTitles((current) => ({ ...current, [item.id]: e.target.value }))
+                        setEditing(null)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                      }}
+                    />
+                  ) : (
+                    titles[item.id] ?? item.title
+                  )}
+                </div>
+                <div style={asS.cardMeta}>
+                  {item.date} · {item.time}
+                </div>
+              </div>
+              <div style={asS.cardRow}>
+                <div style={{ display: 'flex' }}>
+                  {speakers.slice(0, 4).map((contact, index) => (
+                    <div
+                      key={contact.id}
+                      style={{
+                        width: 19,
+                        height: 19,
+                        borderRadius: '50%',
+                        background: `${contact.color}18`,
+                        border: `1.5px solid ${contact.color}55`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 7,
+                        fontWeight: 700,
+                        color: contact.color,
+                        marginLeft: index ? -5 : 0,
+                        fontFamily: 'var(--mono)',
+                      }}
+                    >
+                      {contact.initials}
+                    </div>
+                  ))}
+                  {item.speakers.length > 4 && (
+                    <div
+                      style={{
+                        width: 19,
+                        height: 19,
+                        borderRadius: '50%',
+                        background: 'var(--surface3)',
+                        border: '1.5px solid var(--border)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 8,
+                        color: 'var(--text-dim)',
+                        marginLeft: -5,
+                        fontFamily: 'var(--mono)',
+                      }}
+                    >
+                      +{item.speakers.length - 4}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+                  {item.duration && <span style={asS.tag}>{item.duration}</span>}
+                  <span style={asS.tag}>{t('allSessions.tagReplies', { count: item.utteranceCount })}</span>
+                  {item.languages.map((language) => (
+                    <span key={language} style={asS.langPill}>
+                      {language}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              {item.preview && <div style={asS.cardPreview}>{item.preview}</div>}
+            </div>
+          )
+        })}
+      </div>
+
+      <div style={asS.transcript}>
+        {session ? (
+          <>
+            <div style={asS.transcriptHeader}>
+              <div>
+                <div style={asS.transcriptTitle}>{titles[session.id] ?? session.title}</div>
+                <div style={asS.transcriptMeta}>
+                  {session.date} · {session.time}{session.duration ? ` · ${session.duration}` : ''}
+                </div>
+              </div>
+              <div style={asS.searchBox}>
+                <span style={{ color: 'var(--text-dim)', fontSize: 13 }}>⌕</span>
+                <input
+                  placeholder={t('allSessions.searchPlaceholder')}
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  style={asS.searchInput}
+                />
+              </div>
+            </div>
+            <div style={asS.transcriptBody}>
+              {filteredUtterances.map((utterance) => {
+                const contact = contactById(utterance.speakerId)
+                const hit =
+                  searchText &&
+                  utterance.text.toLowerCase().includes(searchText.toLowerCase())
+
+                return (
+                  <div
+                    key={utterance.id}
+                    style={{
+                      ...asS.uttRow,
+                      background: hit ? 'rgba(245,78,0,0.05)' : 'transparent',
+                    }}
+                  >
+                    <Avatar contact={contact} size={26} />
+                    <div style={{ flex: 1 }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: 8,
+                          alignItems: 'center',
+                          marginBottom: 3,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 12.5,
+                            fontWeight: 600,
+                            color: contact ? contact.color : 'var(--text-dim)',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {contact ? contact.name : t('common.unknown')}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 10.5,
+                            color: 'var(--text-dim)',
+                            fontFamily: 'var(--mono)',
+                          }}
+                        >
+                          {utterance.time}
+                        </span>
+                        {utterance.lang && <span style={asS.langTag}>{utterance.lang}</span>}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 13.5,
+                          color: 'var(--text)',
+                          lineHeight: 1.55,
+                          fontFamily: 'var(--utterance-font,var(--sans))',
+                        }}
+                      >
+                        {searchText ? highlight(utterance.text, searchText) : utterance.text}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+              {!utterancesQuery.isLoading && utterances.length === 0 && (
+                <div style={{ color: 'var(--text-dim)', fontSize: 13, padding: '16px 0' }}>
+                  {t('allSessions.noUtterances')}
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--text-dim)',
+              fontSize: 14,
+            }}
+          >
+            {t('allSessions.selectSession')}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const asS: Record<string, CSSProperties> = {
+  root: { display: 'flex', height: '100vh', background: 'var(--bg)', fontFamily: 'var(--sans)' },
+  list: {
+    width: 308,
+    borderRight: '1px solid var(--border)',
+    overflowY: 'auto',
+    flexShrink: 0,
+    background: 'var(--surface)',
+  },
+  listHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '16px 18px 12px',
+    borderBottom: '1px solid var(--border)',
+    position: 'sticky',
+    top: 0,
+    background: 'var(--surface)',
+    zIndex: 1,
+  },
+  listTitle: { fontSize: 14.5, fontWeight: 600, color: 'var(--text)' },
+  listCount: {
+    background: 'var(--surface2)',
+    color: 'var(--text-muted)',
+    borderRadius: 9999,
+    fontSize: 11,
+    fontWeight: 600,
+    padding: '1px 7px',
+    fontFamily: 'var(--mono)',
+  },
+  card: {
+    padding: '13px 18px',
+    borderBottom: '1px solid var(--border)',
+    cursor: 'pointer',
+    transition: 'background 0.1s',
+    position: 'relative',
+  },
+  cardActive: { background: 'rgba(38,37,30,0.04)' },
+  cardLine: {
+    position: 'absolute',
+    left: 0,
+    top: '15%',
+    bottom: '15%',
+    width: 2,
+    background: 'var(--accent)',
+    borderRadius: 1,
+  },
+  cardTop: { marginBottom: 7 },
+  cardTitle: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: 'var(--text)',
+    lineHeight: 1.3,
+    marginBottom: 2,
+  },
+  cardMeta: { fontSize: 10.5, color: 'var(--text-dim)', fontFamily: 'var(--mono)' },
+  cardRow: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 },
+  tag: {
+    fontSize: 10,
+    color: 'var(--text-dim)',
+    fontFamily: 'var(--mono)',
+    background: 'var(--surface2)',
+    borderRadius: 4,
+    padding: '2px 6px',
+  },
+  langPill: {
+    fontSize: 10,
+    fontWeight: 600,
+    color: 'var(--accent)',
+    background: 'rgba(245,78,0,0.08)',
+    borderRadius: 9999,
+    padding: '2px 7px',
+    fontFamily: 'var(--mono)',
+  },
+  cardPreview: {
+    fontSize: 12,
+    color: 'var(--text-dim)',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  titleInput: {
+    background: 'var(--bg)',
+    border: '1px solid var(--accent)',
+    borderRadius: 4,
+    color: 'var(--text)',
+    fontSize: 13,
+    fontWeight: 600,
+    padding: '2px 6px',
+    outline: 'none',
+    width: '100%',
+  },
+  transcript: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  transcriptHeader: {
+    padding: '14px 24px',
+    borderBottom: '1px solid var(--border)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexShrink: 0,
+    background: 'var(--surface)',
+  },
+  transcriptTitle: { fontSize: 14.5, fontWeight: 600, color: 'var(--text)', marginBottom: 2 },
+  transcriptMeta: { fontSize: 11, color: 'var(--text-dim)', fontFamily: 'var(--mono)' },
+  searchBox: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    background: 'var(--bg)',
+    border: '1px solid var(--border)',
+    borderRadius: 7,
+    padding: '6px 12px',
+  },
+  searchInput: {
+    background: 'none',
+    border: 'none',
+    outline: 'none',
+    color: 'var(--text)',
+    fontSize: 13,
+    width: 180,
+  },
+  transcriptBody: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: '12px 24px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 0,
+  },
+  uttRow: {
+    display: 'flex',
+    gap: 10,
+    padding: '10px 8px',
+    borderRadius: 6,
+    borderBottom: '1px solid var(--border)',
+  },
+  langTag: {
+    fontSize: 9.5,
+    fontFamily: 'var(--mono)',
+    fontWeight: 700,
+    padding: '1px 5px',
+    background: 'var(--surface2)',
+    color: 'var(--accent)',
+    borderRadius: 3,
+  },
+}

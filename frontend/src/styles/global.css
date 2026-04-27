@@ -1,0 +1,152 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+body {
+  font-family: var(--sans);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(38, 37, 30, 0.15);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(38, 37, 30, 0.25);
+}
+
+button {
+  font-family: var(--sans);
+  cursor: pointer;
+}
+
+input,
+textarea {
+  font-family: var(--sans);
+  color: var(--text);
+}
+
+textarea::placeholder,
+input::placeholder {
+  color: var(--text-dim);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.rec-pulse {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+#tweak-panel {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9999;
+  background: var(--bg);
+  border: 1px solid var(--border-med);
+  border-radius: 10px;
+  padding: 16px;
+  width: 220px;
+  display: none;
+  box-shadow:
+    rgba(0, 0, 0, 0.14) 0px 28px 70px,
+    rgba(0, 0, 0, 0.1) 0px 14px 32px,
+    rgba(38, 37, 30, 0.1) 0px 0px 0px 1px;
+}
+#tweak-panel.visible {
+  display: block;
+}
+#tweak-panel h3 {
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+  font-family: var(--mono);
+  margin-bottom: 12px;
+  text-transform: uppercase;
+}
+.tweak-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.tweak-label {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.tweak-toggle {
+  width: 34px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--surface3);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+  border: 1px solid var(--border);
+}
+.tweak-toggle.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.tweak-toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.2s;
+}
+.tweak-toggle.on::after {
+  left: 16px;
+}
+.tweak-select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 3px 6px;
+  font-size: 12px;
+  outline: none;
+  font-family: var(--mono);
+}

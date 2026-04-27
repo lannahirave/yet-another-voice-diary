@@ -1,0 +1,83 @@
+"""Model lifecycle API tests."""
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+
+import pytest
+
+from backend.config import BackendConfig
+
+
+async def _wait_for_state(client, kind: str, target: str, timeout: float = 5.0):
+    deadline = asyncio.get_event_loop().time() + timeout
+    last: dict = {}
+    while asyncio.get_event_loop().time() < deadline:
+        response = await client.get("/models/status")
+        assert response.status_code == 200
+        last = response.json()[kind]
+        if last["state"] == target:
+            return last
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"{kind} did not reach {target}; last={last}")
+
+
+@pytest.mark.asyncio
+async def test_model_status_lists_configured_providers(client):
+    response = await client.get("/models/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) == {"asr", "diarization", "embedding"}
+    assert body["asr"]["model_id"] == "large-v3-turbo"
+    assert body["asr"]["state"] == "UNLOADED"
+
+
+@pytest.mark.asyncio
+async def test_model_unload_is_idempotent(client):
+    response = await client.post("/models/asr/unload")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["kind"] == "asr"
+    assert body["state"] == "UNLOADED"
+
+
+@pytest.mark.asyncio
+async def test_unknown_model_kind_returns_404(client):
+    response = await client.post("/models/missing/unload")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_sortformer_load_surfaces_controlled_error_without_nemo(
+    client, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        BackendConfig,
+        "default_path",
+        staticmethod(lambda: Path(tmp_path) / "config.json"),
+    )
+    original_cfg = await client.get("/config")
+    original_model_id = next(
+        p["model_id"]
+        for p in original_cfg.json()["providers"]
+        if p["kind"] == "diarization"
+    )
+    try:
+        response = await client.post(
+            "/config/provider/diarization", json={"model_id": "sortformer-v2.1"}
+        )
+        assert response.status_code == 200
+
+        response = await client.post("/models/diarization/load")
+        assert response.status_code == 200
+        assert response.json()["state"] in {"LOADING", "ERROR"}
+
+        final = await _wait_for_state(client, "diarization", "ERROR")
+        assert ".[ml-nemo]" in (final["error"] or "")
+    finally:
+        await client.post(
+            "/config/provider/diarization", json={"model_id": original_model_id}
+        )

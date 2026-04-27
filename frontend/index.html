@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Voice Diary</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <div id="tweak-panel">
+      <h3>Tweaks</h3>
+      <div class="tweak-row">
+        <span class="tweak-label">Стартовий екран</span>
+        <select class="tweak-select" id="tw-screen">
+          <option value="session">Сесія</option>
+          <option value="sessions">Всі сесії</option>
+          <option value="queue">Черга</option>
+          <option value="contacts">Контакти</option>
+          <option value="search">Пошук</option>
+          <option value="settings">Налаштування</option>
+        </select>
+      </div>
+      <div class="tweak-row">
+        <span class="tweak-label">Serif body text</span>
+        <div
+          class="tweak-toggle"
+          id="tw-serif"
+          onclick="
+            this.classList.toggle('on');
+            document.body.style.setProperty('--utterance-font', this.classList.contains('on') ? 'var(--serif)' : 'var(--sans)');
+          "
+        ></div>
+      </div>
+      <div class="tweak-row">
+        <span class="tweak-label">Compact density</span>
+        <div
+          class="tweak-toggle"
+          id="tw-compact"
+          onclick="
+            this.classList.toggle('on');
+            document.documentElement.style.setProperty('--utt-padding', this.classList.contains('on') ? '7px 0' : '11px 0');
+          "
+        ></div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
