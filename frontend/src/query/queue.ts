@@ -63,12 +63,12 @@ export function useResolveQueueClusterMutation(options: ResolveQueueOptions = {}
       resolveQueueCluster(cluster.queueIds, contactId),
     onMutate: async ({ cluster, contactId }) => {
       await Promise.all([
-        queryClient.cancelQueries({ queryKey: queryKeys.queue.all }),
+        queryClient.cancelQueries({ queryKey: queryKeys.queue.listRoot() }),
         queryClient.cancelQueries({ queryKey: queryKeys.sessions.utterancesRoot() }),
       ])
 
       const previousQueue = queryClient.getQueriesData<UnknownQueueItem[]>({
-        queryKey: queryKeys.queue.all,
+        queryKey: queryKeys.queue.listRoot(),
       })
       const previousSessionUtterances = queryClient.getQueriesData<Utterance[]>({
         queryKey: queryKeys.sessions.utterancesRoot(),
@@ -76,7 +76,7 @@ export function useResolveQueueClusterMutation(options: ResolveQueueOptions = {}
       const rollbackLive = options.onApplyLiveResolution?.(cluster.segmentIds, contactId)
 
       queryClient.setQueriesData<UnknownQueueItem[]>(
-        { queryKey: queryKeys.queue.all },
+        { queryKey: queryKeys.queue.listRoot() },
         (existing) => existing?.filter((item) => item.id !== cluster.id) ?? [],
       )
 
@@ -116,13 +116,13 @@ export function useSkipQueueClusterMutation() {
   return useMutation({
     mutationFn: ({ cluster }: SkipQueueVariables) => skipQueueCluster(cluster.queueIds),
     onMutate: async ({ cluster }) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.queue.all })
+      await queryClient.cancelQueries({ queryKey: queryKeys.queue.listRoot() })
 
       const previousQueue = queryClient.getQueriesData<UnknownQueueItem[]>({
-        queryKey: queryKeys.queue.all,
+        queryKey: queryKeys.queue.listRoot(),
       })
       queryClient.setQueriesData<UnknownQueueItem[]>(
-        { queryKey: queryKeys.queue.all },
+        { queryKey: queryKeys.queue.listRoot() },
         (existing) => existing?.filter((item) => item.id !== cluster.id) ?? [],
       )
 

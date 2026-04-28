@@ -67,19 +67,15 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
   })
 
   const resolve = async (cluster: UnknownQueueItem, contactId: string) => {
-    await resolveMutation.mutateAsync({ cluster, contactId }).catch(() => undefined)
+    await resolveMutation.mutateAsync({ cluster, contactId })
   }
 
   const skip = async (cluster: UnknownQueueItem) => {
-    await skipMutation.mutateAsync({ cluster }).catch(() => undefined)
+    await skipMutation.mutateAsync({ cluster })
   }
 
   const handleNewContact = async (cluster: UnknownQueueItem, name: string) => {
-    const contact = await createContactMutation
-      .mutateAsync({ name })
-      .catch(() => null)
-    if (!contact) return
-
+    const contact = await createContactMutation.mutateAsync({ name })
     await resolve(cluster, contact.id)
     setNewContactId(null)
     setNewContactName('')

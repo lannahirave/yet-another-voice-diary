@@ -140,6 +140,7 @@ class QueueRepo:
         *,
         record_voice_profile: bool = True,
         embedding_model_id: str | None = None,
+        auto_commit: bool = True,
     ) -> Optional[dict]:
         """Resolve a single queue row.
 
@@ -147,6 +148,9 @@ class QueueRepo:
         deliberate user action (we want to enrich the profile gallery), and
         ``False`` for cascaded automatic re-identifications (avoids piling up
         many near-duplicate profiles for a single contact).
+
+        ``auto_commit`` is ``False`` inside ``resolve_many`` so the entire
+        cluster is committed atomically.
         """
         self.conn.execute(
             """
@@ -200,7 +204,8 @@ class QueueRepo:
                         segment_source,
                     ),
                 )
-        self.conn.commit()
+        if auto_commit:
+            self.conn.commit()
         return self.get(queue_id)
 
     def resolve_many(
@@ -214,7 +219,8 @@ class QueueRepo:
 
         Records a voice profile for the *first* row only — the rest are treated
         as additional segments of the same speaker and don't need a new
-        profile entry. Returns the count of rows actually updated.
+        profile entry. Commits once after all items are processed so the
+        entire cluster is resolved atomically.
         """
         updated = 0
         for idx, qid in enumerate(queue_ids):
@@ -223,9 +229,12 @@ class QueueRepo:
                 contact_id,
                 record_voice_profile=(idx == 0),
                 embedding_model_id=embedding_model_id,
+                auto_commit=False,
             )
             if result is not None:
                 updated += 1
+        if updated:
+            self.conn.commit()
         return updated
 
     def skip(self, queue_id: str) -> Optional[dict]:

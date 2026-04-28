@@ -189,8 +189,10 @@ def _cascade_identify(
             contact_id = resolver.resolve(segment, threshold=threshold)
             if contact_id is None:
                 continue
-            repo.resolve(row["id"], contact_id, record_voice_profile=False)
+            repo.resolve(row["id"], contact_id, record_voice_profile=False, auto_commit=False)
             batch_cascaded += 1
+        if batch_cascaded:
+            conn.commit()
         total_cascaded += batch_cascaded
         if batch_cascaded == 0:
             break
@@ -217,7 +219,11 @@ def _resolve_batch(
         embedding_model_id=embedding_model_id,
     )
     threshold = request.app.state.config.pipeline.speaker_identification_threshold
-    cascaded = _cascade_identify(conn, threshold, embedding_model_id)
+    cascaded = 0
+    try:
+        cascaded = _cascade_identify(conn, threshold, embedding_model_id)
+    except Exception:
+        pass
     return QueueResolveResponse(resolved_count=resolved, cascaded_count=cascaded)
 
 
@@ -269,7 +275,10 @@ def resolve_queue(
     )
     assert result is not None
     threshold = request.app.state.config.pipeline.speaker_identification_threshold
-    _cascade_identify(conn, threshold, embedding_model_id)
+    try:
+        _cascade_identify(conn, threshold, embedding_model_id)
+    except Exception:
+        pass
     # Fill candidates as the legacy shape expected.
     result["candidates"] = []
     return result
