@@ -187,6 +187,8 @@ async def stream(ws: WebSocket) -> None:
     session: RecordingSession | None = None
     sender_task: asyncio.Task | None = None
     dev_audio_chunks: list[np.ndarray] = []
+    _dev_audio_total_samples = 0
+    _DEV_AUDIO_MAX_SAMPLES = 16000 * 300  # cap at 5 minutes per track
 
     async def sender() -> None:
         while True:
@@ -238,7 +240,9 @@ async def stream(ws: WebSocket) -> None:
                     continue
                 audio_np = np.frombuffer(msg["bytes"], dtype=np.float32).copy()
                 if _dev_audio_enabled() and audio_np.size > 0:
-                    dev_audio_chunks.append(audio_np.copy())
+                    _dev_audio_total_samples += audio_np.size
+                    if _dev_audio_total_samples <= _DEV_AUDIO_MAX_SAMPLES:
+                        dev_audio_chunks.append(audio_np.copy())
                 try:
                     await coord.process_chunk(audio_np, SAMPLE_RATE)
                 except Exception as exc:
