@@ -27,7 +27,7 @@ def test_write_dev_audio_wav_is_disabled_outside_dev(monkeypatch, tmp_path):
 
 def test_write_dev_audio_wav_writes_pcm16_in_dev(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("NODE_ENV", "development")
+    monkeypatch.setenv("VOICE_DIARY_SAVE_DEV_AUDIO", "1")
 
     path = _write_dev_audio_wav(
         "session-1",

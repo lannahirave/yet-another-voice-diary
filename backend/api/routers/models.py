@@ -157,6 +157,10 @@ def unload_model(kind: str, request: Request):
     load = _states(request)[kind]
     if _provider_state(provider) == "LOADING":
         raise HTTPException(status_code=409, detail="model is currently loading")
+    # Wait for any background load thread to fully finish — CTranslate2
+    # WhisperModel.__del__ can crash (STATUS_STACK_BUFFER_OVERRUN) if we
+    # yank the reference out from under an in-progress C extension init.
+    load.event.wait(timeout=2.0)
     if hasattr(provider, "unload"):
         provider.unload()
     else:

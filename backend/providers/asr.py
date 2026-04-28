@@ -158,10 +158,14 @@ class WhisperASRProvider:
 
     def unload(self) -> None:
         """Release the model reference; the next transcription loads lazily."""
+        model = self._model
         self._model = None
         self._backend = None
         self._state = "UNLOADED"
         self._error = None
+        # Drop the local reference after state is clean so any C-extension
+        # __del__ crash (CTranslate2 known issue) doesn't leave stale state.
+        del model
 
     @staticmethod
     def _auto_device() -> str:

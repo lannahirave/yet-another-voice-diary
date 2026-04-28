@@ -38,10 +38,7 @@ SAMPLE_RATE = 16000
 
 
 def _dev_audio_enabled() -> bool:
-    return (
-        os.environ.get("NODE_ENV") == "development"
-        or os.environ.get("VOICE_DIARY_SAVE_DEV_AUDIO") == "1"
-    )
+    return os.environ.get("VOICE_DIARY_SAVE_DEV_AUDIO") == "1"
 
 
 def _dev_audio_dir() -> Path:
