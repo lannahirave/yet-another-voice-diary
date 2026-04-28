@@ -1,109 +1,147 @@
-# Backend Codebase — Identified Issues
+# Backend Codebase — Verified Issues
 
-Generated from a thorough codebase audit (2026-04-28).
+Generated from a thorough codebase audit and verified by subagents (2026-04-28).
 
 ---
 
 ## Severity: High
 
-### 1. Threshold default inconsistency (`config.py` vs `matching.py`)
+### 1. Threshold default gap (config vs matcher) — but wired at runtime
 
-**Files:** `backend/config.py:70`, `backend/identification/matching.py:25`
+**Files:** `backend/config.py:70`, `backend/identification/matching.py:29`, `backend/identification/resolver.py:43`
 
-`PipelineConfig.speaker_identification_threshold` defaults to `0.5`, but `SimilarityMatcher.find_best_match()` has a hard-coded default of `0.82`. The `resolve()` method also defaults to `0.82`. The config value of `0.5` is never used as the default for `resolve()` — the resolver receives its threshold from the caller (coordinator), not from config.
+**Status:** PARTIAL — the default gap is real, but the claim that the config value is "never used" is false.
 
-**Impact:** Config UI (Settings > Memory > Identification threshold) controls a value that's not the actual matching default. The POST `/config/threshold` saves to disk correctly, but nothing reads this value at resolve time — the caller provides the threshold explicitly.
+`PipelineConfig.speaker_identification_threshold` defaults to `0.5`, while `SimilarityMatcher.find_best_match()` hard-codes `0.82` and `resolve()` defaults to `0.82`. The gap means calling `resolve()` without explicitly passing `threshold=` uses 0.82, not the configured value.
 
-**Fix:** Either wire the config threshold into the resolver's default, or remove the `0.5` config default and document that callers must provide the threshold.
+**However**, both production callers explicitly read and pass the config threshold:
+- `audio_ws.py:175-177`: `resolver.resolve(s, threshold=config.pipeline.speaker_identification_threshold)`
+- `queue.py:198`: reads `threshold = config.pipeline.speaker_identification_threshold` and passes at `line 172`
+- `queue.py:39`: cluster threshold = `config_threshold + _CLUSTER_MARGIN`
+
+The config IS functional at runtime. The risk is only if a new caller invokes `resolve()` without the `threshold=` kwarg.
+
+**Fix:** Change `resolve()` default to `None` and read config internally, or change the config default to `0.82` to match.
 
 ---
 
 ### 2. ECAPA embedding model fails to load (`WinError 123`)
 
-**Files:** `backend/providers/embedding.py:108-113`, `docs/voice-identification-environment.md`
+**File:** `backend/providers/embedding.py:98`
 
-The SpeechBrain model cache path composes a mixed relative/absolute path:
+**Status: CONFIRMED**
+
+```python
+savedir=f"backend/pretrained_models/{model_name.replace('/', '_')}",
+```
+
+`savedir` is a bare relative path. SpeechBrain's `from_hparams` internally concatenates this with its absolute cache root. On Windows, mixed `/` vs `\` separators produce an invalid path:
 ```
 pretrained_models\D:\MS_diploma\web_app\pretrained_models\speechbrain_spkrec-ecapa-voxceleb
 ```
 
-This happens because `SpeakerRecognition.from_hparams()` receives a relative `savedir` while SpeechBrain internally resolves from an absolute cache root.
+**Impact:** Speaker identification is completely broken. ASR, VAD, and diarization work.
 
-**Impact:** Speaker identification is completely broken. ASR, VAD, and diarization work. The embedding provider returns a zero vector on inference failure, so the pipeline continues but no real speaker matching happens.
-
-**Fix:** Set a clean absolute `savedir` or pre-download the model to a known path before loading.
+**Fix:** Pass an absolute `savedir` using `Path(__file__)` or `Path.cwd()`, e.g.:
+```python
+savedir=str(Path("backend/pretrained_models") / model_name.replace("/", "_"))
+```
 
 ---
 
-### 3. PyAnnote `transformers` compatibility may break silently after upgrades
+### 3. `transformers>=4.40` open range allows v5.x which can break PyAnnote
 
-**Files:** `backend/providers/diarization.py:209-216`
+**Files:** `backend/pyproject.toml:33`, `backend/providers/diarization.py:209`
 
-The PyAnnote import chain is fragile: `pyannote.audio → lightning → torchmetrics → transformers.AutoModel`. If `transformers` is upgraded to v5+ without also upgrading `torchmetrics`, the import fails with `ImportError: cannot import name 'AutoModel'`. Observed transiently with `transformers 5.6.2` + `torchmetrics 1.9.0` — may work on fresh imports but fail under specific load orders.
+**Status: CONFIRMED**
 
-**Impact:** Diarization becomes unavailable. Pipeline falls back to full-utterance embedding (no per-speaker grouping), degrading identification quality.
+`pyannote.audio==4.0.3` (pinned) imports `lightning → torchmetrics → transformers.AutoModel`. But `transformers>=4.40` has no upper bound — pip can resolve v5.x, where `torchmetrics 1.9.0` may fail to import `AutoModel`.
 
-**Fix:** Pin `transformers<5.0` in `pyproject.toml` for the `[ml]` extra, or upgrade `torchmetrics` to a version compatible with transformers v5.
+**Impact:** Diarization becomes unavailable. Pipeline falls back to full-utterance embedding, degrading identification quality.
+
+**Fix:** Pin `transformers>=4.44,<5.0` in the `[ml]` extra.
 
 ---
 
 ## Severity: Medium
 
-### 4. `_load_voice_profiles` dimension integrity check — `embedding_dim=0` bypasses filter
+### 4. `_load_voice_profiles` dimension check bypassed when `embedding_dim=0`
 
-**File:** `backend/identification/resolver.py:169-171`
+**File:** `backend/identification/resolver.py:169-170`
 
-The guard `if stored_dim and stored_dim != actual_dim` uses truthiness. When `embedding_dim` is `0` (the schema default for unmigrated rows), the check is skipped because `0` is falsy. This means legacy profiles always pass dimension integrity checks regardless of actual dimension.
+**Status: CONFIRMED**
 
-**Impact:** If a database has unmigrated profiles from a different embedding model (e.g., WavLM 512-dim), those profiles pass the dimension filter and get compared against ECAPA 192-dim embeddings. The cosine similarity would be computed on mismatched shapes, causing a numpy error or garbage score.
+```python
+stored_dim = int(row_embedding_dim or 0)   # line 169
+if stored_dim and stored_dim != actual_dim: # line 170 — 0 is falsy, skips check
+    continue
+```
 
-**Fix:** Compare `stored_dim is not None` instead of `stored_dim`, or run the 004 migration to backfill all legacy rows before the resolver is invoked.
+When `embedding_dim` is `0` (schema default for unmigrated rows), the truthiness check at line 170 evaluates `False`, skipping the dimension filter entirely. Legacy profiles pass through regardless of actual embedding size.
 
----
-
-### 5. Config rewrite-on-normalize can crash on read-only filesystem
-
-**File:** `backend/config.py:144-145`
-
-`BackendConfig.load()` auto-corrects legacy diarization model IDs and immediately re-saves. If the config file is read-only, or the parent directory is not writable, this raises an exception at load time.
-
-**Impact:** App fails to start if the config file was deployed read-only or if the user's home directory has restrictive permissions.
-
-**Fix:** Wrap the `config.save(source)` in a try-except and log a warning instead of crashing.
+**Fix:** Change to `if stored_dim is not None and stored_dim != actual_dim:` or ensure migration `004` backfills all rows before the resolver runs.
 
 ---
 
-### 6. Per-kind `_provider_status` duplicated in two modules
+### 5. `BackendConfig.load()` crashes on read-only filesystem after normalization
 
-**Files:** `backend/api/routers/models.py:73-80`, `backend/api/routers/config_rt.py:23-32`
+**File:** `backend/config.py:145`
 
-The function that extracts `model_id`, `_state`, and `_error` from a provider object for display is implemented identically in both `models.py` and `config_rt.py`. This is a maintenance risk — changes to the provider state protocol must be made in two places.
+**Status: CONFIRMED**
 
-**Fix:** Extract `_provider_status()` to a shared module (e.g., `api/deps.py` or a new `api/provider_utils.py`) and import it in both routers.
+```python
+if raw_diarization_model_id != config.providers.diarization_model_id:
+    config.save(source)  # line 145 — no try-except
+```
 
----
+When loading a config with a legacy diarization model ID (e.g., `"nemo"`), the auto-correction triggers an immediate `config.save()`. On a read-only filesystem or directory with restrictive permissions, this raises `PermissionError`/`OSError` uncaught.
 
-### 7. Zero-norm exact comparison in cosine and clustering
-
-**Files:** `backend/identification/matching.py:18`, `backend/identification/clustering.py:50`
-
-Both use exact equality (`== 0.0`) for zero-norm checks. Near-zero norms (e.g., `1e-40` from degenerate embeddings) pass the guard but produce numerically unstable cosine values (NaN or division overflow).
-
-**Impact:** Very rare — real ECAPA embeddings are L2-normalized (norm ≈ 1.0). Could trigger with corrupted or empty embedding blobs.
-
-**Fix:** Use tolerance-based comparison: `np.linalg.norm(a) < 1e-8`.
+**Fix:** Wrap in try-except, log a warning, and continue without saving.
 
 ---
 
-### 8. Greedy centroid clustering is order-dependent
+### 6. `_provider_status` duplicated and diverged across two modules
 
-**File:** `backend/identification/clustering.py:35-69`
+**Files:** `backend/api/routers/models.py:73-80`, `backend/api/routers/config_rt.py:23-33`
 
-The single-pass algorithm assigns each embedding to the first cluster whose centroid exceeds the threshold. Different input orders produce different cluster assignments.
+**Status: CONFIRMED (diverged, not identical)**
 
-**Impact:** The unknown-queue UI might show different cluster groupings on successive loads of the same data. The docstring acknowledges this and notes that cascade-re-identification after every resolve mitigates stale clustering. Acceptable for small queues (<50 items).
+Both define `_provider_status(kind, provider) -> ProviderStatus`. But they have diverged:
+- `models.py` refactored state checking into a `_provider_state()` helper; `config_rt.py` kept it inline.
+- `models.py` uses `str(model_id or "")` with secondary fallback; `config_rt.py` uses `getattr(..., "model_size", "") or ""`.
+- Neither imports from the other.
 
-**Fix:** Not critical. Consider re-sorting embeddings by file path before clustering for determinism, or use agglomerative hierarchical clustering for more stable results.
+**Fix:** Extract a single implementation into `api/provider_utils.py` and import from both routers.
+
+---
+
+### 7. Zero-norm uses exact `== 0.0` float comparison (no tolerance)
+
+**Files:** `backend/identification/matching.py:18`, `backend/identification/clustering.py:50,74`
+
+**Status: CONFIRMED**
+
+```python
+if norm_a == 0.0 or norm_b == 0.0:  # matching.py:18 — exact equality
+if float(np.linalg.norm(emb)) == 0.0:  # clustering.py:50 — exact equality
+if float(np.linalg.norm(e)) > 0.0:    # clustering.py:74 — exact equality
+```
+
+Floating-point norms near zero (e.g., `1e-16`) pass the guard and can cause division overflow or garbage similarity scores.
+
+**Fix:** Replace `== 0.0` with `< 1e-8` tolerance.
+
+---
+
+### 8. Greedy centroid clustering is order-dependent (acceptable by design)
+
+**File:** `backend/identification/clustering.py:49-67`
+
+**Status: CONFIRMED**
+
+Line 67 updates the centroid immediately (`best_cluster.add(idx, emb)`), which affects all subsequent comparisons in the single-pass loop at line 59. Different input orderings can produce different clusters. The docstring (lines 3-10) acknowledges this as intentional — the queue is small and cascade-re-identification mitigates staleness.
+
+**Verdict:** Not a bug — acceptable by design. Documented for awareness.
 
 ---
 
@@ -111,60 +149,67 @@ The single-pass algorithm assigns each embedding to the first cluster whose cent
 
 ### 9. `PipelineEngine` is dead code
 
-**File:** `backend/pipeline/engine.py` (9 lines)
+**File:** `backend/pipeline/engine.py:5`
 
-Contains only a constructor that stores `BackendConfig`. No methods. Not referenced anywhere in the codebase. Appears to be an early skeleton that was superseded by `PipelineCoordinator`.
+**Status: CONFIRMED**
 
-**Fix:** Remove the file, or add a docstring noting it's a placeholder for future use.
+Contains only a constructor. Zero references anywhere in the codebase. The actual orchestration is done by `PipelineCoordinator`.
 
----
-
-### 10. `seed_dev_db.py` uses brittle path manipulation
-
-**File:** `backend/scripts/seed_dev_db.py`
-
-The script appends three levels of `os.path.dirname` to `sys.path` to import `backend.config`. This works only when run from the `web_app/` root.
-
-**Impact:** Running the script from any other directory causes `ModuleNotFoundError`.
-
-**Fix:** Use `pip install -e ".[dev]"` and import `from backend.config import BackendConfig` directly (the project structure already supports this with the pyproject.toml `package-dir` remapping). Or add `Path(__file__).resolve().parents[2]` to `sys.path` instead of the brittle relative chain.
+**Fix:** Remove the file or mark as placeholder with a docstring.
 
 ---
 
-### 11. `get_candidates` cross-model fallback may return misleading scores
+### 10. `seed_dev_db.py` uses brittle triple-`dirname` path manipulation
+
+**File:** `backend/scripts/seed_dev_db.py:16`
+
+**Status: CONFIRMED**
+
+```python
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+```
+
+Three chained `dirname()` calls climb from `backend/scripts/` to `web_app/` root. If the script moves, the chain breaks.
+
+**Fix:** Use `Path(__file__).resolve().parents[2]` for clarity, or rely on `pip install -e .` and import `backend.config` directly.
+
+---
+
+### 11. `get_candidates()` cross-model fallback returns scores without `model_id` context
 
 **File:** `backend/identification/resolver.py:105-109`
 
-When the current embedding model has no enrolled profiles, `get_candidates()` falls back to querying all profiles with the same embedding dimension, regardless of model_id. Different embedding models (e.g., ECAPA vs WavLM) produce vectors in different similarity-score distributions, so a score of 0.75 from WavLM profiles might mean something different than 0.75 from ECAPA profiles.
+**Status: CONFIRMED**
 
-**Impact:** UI candidate suggestions might appear misleadingly confident when shown alongside scores from the current model. This is deliberate tradeoff documented in the code ("Candidate suggestions are a manual-assistance surface, not an automatic decision boundary").
+When the current embedding model has no enrolled profiles, the fallback queries profiles from ANY model with matching dimension. The returned `(contact_id, score, contact_name)` tuples have no field indicating which model produced the score, so the UI cannot flag that candidates came from a different embedding space with potentially different score distributions.
 
-**Fix:** Add a visual indicator in the UI when candidates come from a different model. Not essential — this is a UX enhancement, not a correctness bug.
+**Note:** `resolve()` stays strict and never uses this fallback. This is documented as a deliberate tradeoff (lines 100-104).
+
+**Fix:** Low priority — add a `model_id` field to candidate results for UI awareness.
 
 ---
 
-### 12. `create_app` closes DB connection after migration then reopens later
+### 12. `create_app` closes DB after migration — by design, NOT a bug
 
-**File:** `backend/api/app.py:84`
+**Files:** `backend/api/app.py:84`, `backend/api/deps.py:27-50`
 
-`Database` is opened, schema initialized, migrations applied, then `db.close()` called. Later, each HTTP request opens a fresh `sqlite3.Connection` via `get_db()`. This is intentional (per-request connections for concurrency safety) but the intermediate close-and-reopen adds unnecessary overhead for the migration phase.
+**Status: FALSE — intentionally designed this way**
 
-**Impact:** Negligible performance impact (happens once at startup).
+The startup DB connection is for schema init + migrations only. Per-request connections are opened fresh in `get_db()` for concurrency safety (documented rationale in `deps.py:32-42`). The close/reopen is intentional and cheap.
 
-**Fix:** Not needed. The double-open is cheap and allows the migration connection to use different settings than request connections.
+**Verdict:** Removed from flaws list.
 
 ---
 
 ## Known Environment Issues
 
 ### ECAPA path bug (`WinError 123`)
-See issue #2 above. Documented in `docs/voice-identification-environment.md`.
+See issue #2. Documented in `docs/voice-identification-environment.md`.
 
 ### `torchcodec` FFmpeg DLLs not installed
-PyAnnote warns about missing FFmpeg DLLs. Harmless — Voice Diary feeds in-memory numpy arrays rather than audio files, so the file-decoding code path is never used.
+PyAnnote warns about missing FFmpeg DLLs. Harmless — Voice Diary feeds in-memory numpy arrays.
 
 ### Stale `.pyc` caches after `transformers` upgrades
-PyAnnote diarization may fail on stale `.pyc` caches after upgrading transformers. Clear with:
 ```bash
 find .venv-ml -name "*.pyc" -delete
 find .venv-ml -name "__pycache__" -type d -exec rm -rf {} +
