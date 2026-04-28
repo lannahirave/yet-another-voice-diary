@@ -337,6 +337,13 @@ const PROVIDER_KINDS: ProviderKind[] = ['asr', 'embedding', 'diarization']
 
 export function Settings() {
   const { t, i18n: i18nInstance } = useTranslation()
+  const [theme, setThemeState] = useState<string>(() => {
+    try {
+      return localStorage.getItem('vd-theme') || 'light'
+    } catch {
+      return 'light'
+    }
+  })
   const sections = sectionsBase.map((section) => ({ id: section.id, label: t(section.labelKey) }))
   const [active, setActive] = useState<SectionId>('providers')
   const [threshold, setThresholdValue] = useState(0.5)
@@ -802,7 +809,35 @@ export function Settings() {
                 </div>
               ))}
             </div>
-            <div style={stS.inlineHint}>{t('settings.storageHint')}</div>
+            <div style={stS.settingRow}>
+              <div style={stS.settingName}>{t('settings.theme')}</div>
+              <div style={{ display: 'flex', gap: 5 }}>
+                {(
+                  [
+                    ['light', t('settings.themeLight')],
+                    ['dark', t('settings.themeDark')],
+                  ] as const
+                ).map(([value, label]) => {
+                  const isActive = theme === value
+                  return (
+                    <button
+                      key={value}
+                      onClick={() => {
+                        setThemeState(value)
+                        document.documentElement.setAttribute('data-theme', value)
+                        try { localStorage.setItem('vd-theme', value) } catch {}
+                      }}
+                      style={{
+                        ...stS.segBtn,
+                        ...(isActive ? stS.segBtnActive : {}),
+                      }}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           </>
         )}
 

@@ -26,8 +26,6 @@
   --text-muted:  rgba(38, 37, 30, 0.6);
   --text-dim:    rgba(38, 37, 30, 0.42);
 
-  /* Fonts. Real CursorGothic/jjannon/berkeleyMono are unlicensed proprietary.
-     Keep the free stack; drop real files into /public/fonts/ + add @font-face later. */
   --sans:  system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
   --serif: 'Lora', 'Iowan Old Style', Georgia, 'Times New Roman', ui-serif;
   --mono:  'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
@@ -47,4 +45,33 @@
 
   --utterance-font: var(--sans);
   --utt-padding: 11px 0;
+}
+
+[data-theme="dark"] {
+  --color-surface-100: #1c1c1a;
+  --color-surface-200: #1f1e1c;
+  --color-surface-300: #252422;
+  --color-surface-400: #2a2926;
+  --color-surface-500: #302f2c;
+
+  --bg:          var(--color-surface-200);
+  --surface:     var(--color-surface-300);
+  --surface2:    var(--color-surface-400);
+  --surface3:    #3d3c38;
+
+  --border:      rgba(255, 255, 255, 0.08);
+  --border-med:  rgba(255, 255, 255, 0.14);
+  --border-str:  rgba(255, 255, 255, 0.3);
+
+  --accent:      #ff6b2b;
+  --accent-dim:  rgba(255, 107, 43, 0.12);
+  --record:      #e84c72;
+  --record-dim:  rgba(232, 76, 114, 0.12);
+  --green:       #3dab82;
+  --amber:       #d49a3d;
+
+  --text:        #e8e6df;
+  --text-soft:   rgba(232, 230, 223, 0.78);
+  --text-muted:  rgba(232, 230, 223, 0.55);
+  --text-dim:    rgba(232, 230, 223, 0.38);
 }
