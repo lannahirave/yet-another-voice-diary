@@ -28,12 +28,12 @@ class QueueRepo:
             FROM unknown_queue q
             JOIN speaker_segments ss ON ss.id = q.speaker_segment_id
             WHERE q.resolved_contact_id IS NULL
-            ORDER BY q.created_at ASC
+            ORDER BY q.created_at DESC
             """
         )
         return [self._row_to_dict(r) for r in cur.fetchall()]
 
-    def list_unresolved_with_extras(self) -> list[dict]:
+    def list_unresolved_with_extras(self, limit: int | None = None) -> list[dict]:
         """Return unresolved rows joined with embedding bytes + best utterance.
 
         Adds, per row:
@@ -43,10 +43,9 @@ class QueueRepo:
           - ``fragment_count`` (number of utterances bound to the segment)
 
         Designed for the cluster builder — a single query per page load instead
-        of N+1 lookups.
+        of N+1 lookups. When *limit* is given, only the first N rows are returned.
         """
-        cur = self.conn.execute(
-            """
+        sql = """
             SELECT q.id, q.speaker_segment_id, q.created_at, ss.session_id,
                    COALESCE(s.title, '')             AS session_title,
                    ss.embedding, ss.source AS segment_source,
@@ -76,9 +75,11 @@ class QueueRepo:
                 GROUP BY u1.speaker_segment_id
             ) longest ON longest.speaker_segment_id = ss.id
             WHERE q.resolved_contact_id IS NULL
-            ORDER BY q.created_at ASC
-            """
-        )
+            ORDER BY q.created_at DESC
+        """
+        if limit is not None:
+            sql += f" LIMIT {int(limit)}"
+        cur = self.conn.execute(sql)
         out: list[dict] = []
         for row in cur.fetchall():
             out.append(
@@ -96,6 +97,13 @@ class QueueRepo:
                 }
             )
         return out
+
+    def count_unresolved(self) -> int:
+        """Return total unresolved items (lightweight, no BLOBs)."""
+        cur = self.conn.execute(
+            "SELECT COUNT(*) FROM unknown_queue WHERE resolved_contact_id IS NULL"
+        )
+        return int(cur.fetchone()[0])
 
     def get(self, queue_id: str) -> Optional[dict]:
         cur = self.conn.execute(

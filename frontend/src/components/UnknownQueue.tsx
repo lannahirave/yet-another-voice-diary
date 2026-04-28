@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useContactsData, useCreateContactMutation } from '../query/contacts'
 import {
   useQueueListQuery,
+  useQueueCountQuery,
   useResolveQueueClusterMutation,
   useSkipQueueClusterMutation,
 } from '../query/queue'
@@ -22,7 +23,10 @@ interface UnknownQueueProps {
 export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }: UnknownQueueProps) {
   const { t } = useTranslation()
   const { contacts, contactById } = useContactsData()
-  const queueQuery = useQueueListQuery()
+  const PAGE_SIZE = 20
+  const [offset, setOffset] = useState(0)
+  const queueQuery = useQueueListQuery(PAGE_SIZE, offset)
+  const countQuery = useQueueCountQuery()
   const createContactMutation = useCreateContactMutation()
   const resolveMutation = useResolveQueueClusterMutation({
     onApplyLiveResolution,
@@ -37,6 +41,8 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
   const [sessionFilter, setSessionFilter] = useState<string>('all')
 
   const items = queueQuery.data ?? []
+  const totalCount = countQuery.data ?? 0
+  const hasMore = offset + PAGE_SIZE < totalCount && items.length === PAGE_SIZE
   const error = queueQuery.error ? t('queue.backendUnavailable') : null
   const sessionOptions = deriveQueueSessionOptions(items)
 
@@ -49,6 +55,7 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
     if (normalizedFilter !== sessionFilter) {
       setSessionFilter(normalizedFilter)
     }
+    setOffset(0)
   }, [currentSessionId, sessionFilter, sessionOptions])
 
   const filteredItems = filterUnknownQueueItems({
@@ -322,6 +329,21 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
             </div>
           )
         })}
+        {hasMore && !queueQuery.isFetching && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0' }}>
+            <button
+              onClick={() => setOffset((prev) => prev + PAGE_SIZE)}
+              style={uqS.loadMoreBtn}
+            >
+              Load more ({totalCount - (offset + PAGE_SIZE)} remaining)
+            </button>
+          </div>
+        )}
+        {queueQuery.isFetching && offset > 0 && (
+          <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--text-dim)', fontSize: 12 }}>
+            Loading…
+          </div>
+        )}
       </div>
     </div>
   )
@@ -400,6 +422,18 @@ const uqS: Record<string, CSSProperties> = {
     padding: '0 2px',
   },
   list: { flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 },
+  loadMoreBtn: {
+    background: 'var(--surface2)',
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    padding: '10px 24px',
+    color: 'var(--text)',
+    fontSize: 13,
+    cursor: 'pointer',
+    fontFamily: 'var(--sans)',
+    fontWeight: 500,
+    transition: 'background 0.15s',
+  },
   empty: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', paddingTop: '18vh' },
   card: {
     background: 'var(--bg)',

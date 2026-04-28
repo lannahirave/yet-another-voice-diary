@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQueueListQuery } from '../query/queue'
+import { useQueueCountQuery } from '../query/queue'
 import type { ScreenId } from '../types/domain'
 
 interface SidebarProps {
@@ -23,8 +23,8 @@ interface NavGroup {
 
 export function Sidebar({ screen, setScreen, recording }: SidebarProps) {
   const { t } = useTranslation()
-  const queueQuery = useQueueListQuery()
-  const unknownCount = queueQuery.data?.length ?? 0
+  const countQuery = useQueueCountQuery()
+  const unknownCount = countQuery.data ?? 0
 
   const nav: NavGroup[] = [
     {

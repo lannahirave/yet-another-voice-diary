@@ -10,7 +10,7 @@ from __future__ import annotations
 import sqlite3
 
 import numpy as np
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ...identification.clustering import centroid, cluster_embeddings
 from ...identification.resolver import SpeakerResolver, SQLiteResolverStore
@@ -48,7 +48,10 @@ def _decode_embedding(blob) -> np.ndarray:
 
 @router.get("", response_model=list[QueueClusterOut])
 def list_queue(
-    request: Request, conn: sqlite3.Connection = Depends(get_db)
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+    limit: int = Query(20, ge=1, le=200),
+    offset: int = Query(0, ge=0),
 ):
     rows = QueueRepo(conn).list_unresolved_with_extras()
     if not rows:
@@ -138,8 +141,13 @@ def list_queue(
             )
         )
 
-    clusters.sort(key=lambda c: c.created_at)
-    return clusters
+    clusters.sort(key=lambda c: c.created_at, reverse=True)
+    return clusters[offset : offset + limit]
+
+
+@router.get("/count")
+def queue_count(conn: sqlite3.Connection = Depends(get_db)):
+    return {"count": QueueRepo(conn).count_unresolved()}
 
 
 def _cascade_identify(
@@ -151,30 +159,43 @@ def _cascade_identify(
     segment whose embedding now matches the freshly added profile (or any
     existing one above the threshold — the resolver doesn't know which is
     which) gets auto-resolved without recording another voice profile.
-    Returns the number of cascaded resolutions.
+
+    Processes in batches of 100 to bound memory. Returns the total number
+    of cascaded resolutions.
     """
     repo = QueueRepo(conn)
     resolver = SpeakerResolver(
         SQLiteResolverStore(conn),
         embedding_model_id=embedding_model_id,
     )
-    cascaded = 0
-    for row in repo.list_unresolved_with_extras():
-        emb = _decode_embedding(row["embedding"])
-        if emb.size == 0:
-            continue
-        segment = SpeakerSegment(
-            id=row["speaker_segment_id"],
-            session_id=row["session_id"],
-            embedding=emb,
-            source=row.get("source") or "mic",
-        )
-        contact_id = resolver.resolve(segment, threshold=threshold)
-        if contact_id is None:
-            continue
-        repo.resolve(row["id"], contact_id, record_voice_profile=False)
-        cascaded += 1
-    return cascaded
+    total_cascaded = 0
+    BATCH = 100
+
+    while True:
+        rows = repo.list_unresolved_with_extras(limit=BATCH)
+        if not rows:
+            break
+        batch_cascaded = 0
+        for row in rows:
+            emb = _decode_embedding(row["embedding"])
+            if emb.size == 0:
+                continue
+            segment = SpeakerSegment(
+                id=row["speaker_segment_id"],
+                session_id=row["session_id"],
+                embedding=emb,
+                source=row.get("source") or "mic",
+            )
+            contact_id = resolver.resolve(segment, threshold=threshold)
+            if contact_id is None:
+                continue
+            repo.resolve(row["id"], contact_id, record_voice_profile=False)
+            batch_cascaded += 1
+        total_cascaded += batch_cascaded
+        if batch_cascaded == 0:
+            break
+
+    return total_cascaded
 
 
 def _resolve_batch(

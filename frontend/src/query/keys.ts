@@ -7,7 +7,9 @@ export const queryKeys = {
   },
   queue: {
     all: ['queue'] as const,
-    list: () => ['queue', 'list'] as const,
+    list: (params?: { limit?: number; offset?: number }) =>
+      ['queue', 'list', params ?? {}] as const,
+    count: () => ['queue', 'count'] as const,
   },
   sessions: {
     all: ['sessions'] as const,

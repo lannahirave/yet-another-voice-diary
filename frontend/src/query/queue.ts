@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { adaptQueueCluster } from '../api/adapters'
-import { resolveQueueCluster, skipQueueCluster, listQueue } from '../api/queue'
+import { resolveQueueCluster, skipQueueCluster, listQueue, getQueueCount } from '../api/queue'
 import type { UnknownQueueItem, Utterance } from '../types/domain'
 import { queryKeys } from './keys'
 
@@ -36,12 +36,22 @@ function patchSessionUtterances(
   return changed ? next : utterances
 }
 
-export function useQueueListQuery() {
+export function useQueueListQuery(limit = 20, offset = 0) {
   return useQuery({
-    queryKey: queryKeys.queue.list(),
-    queryFn: listQueue,
+    queryKey: queryKeys.queue.list({ limit, offset }),
+    queryFn: () => listQueue(limit, offset),
     staleTime: 5_000,
+    placeholderData: (prev) => prev,
     select: (clusters) => clusters.map((cluster) => adaptQueueCluster(cluster)),
+  })
+}
+
+export function useQueueCountQuery() {
+  return useQuery({
+    queryKey: queryKeys.queue.count(),
+    queryFn: getQueueCount,
+    staleTime: 10_000,
+    select: (data) => data.count,
   })
 }
 
@@ -53,18 +63,20 @@ export function useResolveQueueClusterMutation(options: ResolveQueueOptions = {}
       resolveQueueCluster(cluster.queueIds, contactId),
     onMutate: async ({ cluster, contactId }) => {
       await Promise.all([
-        queryClient.cancelQueries({ queryKey: queryKeys.queue.list() }),
+        queryClient.cancelQueries({ queryKey: queryKeys.queue.all }),
         queryClient.cancelQueries({ queryKey: queryKeys.sessions.utterancesRoot() }),
       ])
 
-      const previousQueue = queryClient.getQueryData<UnknownQueueItem[]>(queryKeys.queue.list())
+      const previousQueue = queryClient.getQueriesData<UnknownQueueItem[]>({
+        queryKey: queryKeys.queue.all,
+      })
       const previousSessionUtterances = queryClient.getQueriesData<Utterance[]>({
         queryKey: queryKeys.sessions.utterancesRoot(),
       })
       const rollbackLive = options.onApplyLiveResolution?.(cluster.segmentIds, contactId)
 
-      queryClient.setQueryData<UnknownQueueItem[]>(
-        queryKeys.queue.list(),
+      queryClient.setQueriesData<UnknownQueueItem[]>(
+        { queryKey: queryKeys.queue.all },
         (existing) => existing?.filter((item) => item.id !== cluster.id) ?? [],
       )
 
@@ -78,7 +90,9 @@ export function useResolveQueueClusterMutation(options: ResolveQueueOptions = {}
     onError: (_error, _variables, context) => {
       if (!context) return
 
-      queryClient.setQueryData(queryKeys.queue.list(), context.previousQueue)
+      for (const [key, data] of context.previousQueue) {
+        queryClient.setQueryData(key, data)
+      }
       for (const [key, data] of context.previousSessionUtterances) {
         queryClient.setQueryData(key, data)
       }
@@ -86,7 +100,7 @@ export function useResolveQueueClusterMutation(options: ResolveQueueOptions = {}
     },
     onSettled: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.queue.list() }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.queue.all }),
         queryClient.invalidateQueries({ queryKey: queryKeys.contacts.list() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.contacts.utterancesRoot() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.sessions.list() }),
@@ -102,21 +116,25 @@ export function useSkipQueueClusterMutation() {
   return useMutation({
     mutationFn: ({ cluster }: SkipQueueVariables) => skipQueueCluster(cluster.queueIds),
     onMutate: async ({ cluster }) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.queue.list() })
+      await queryClient.cancelQueries({ queryKey: queryKeys.queue.all })
 
-      const previousQueue = queryClient.getQueryData<UnknownQueueItem[]>(queryKeys.queue.list())
-      queryClient.setQueryData<UnknownQueueItem[]>(
-        queryKeys.queue.list(),
+      const previousQueue = queryClient.getQueriesData<UnknownQueueItem[]>({
+        queryKey: queryKeys.queue.all,
+      })
+      queryClient.setQueriesData<UnknownQueueItem[]>(
+        { queryKey: queryKeys.queue.all },
         (existing) => existing?.filter((item) => item.id !== cluster.id) ?? [],
       )
 
       return { previousQueue }
     },
     onError: (_error, _variables, context) => {
-      queryClient.setQueryData(queryKeys.queue.list(), context?.previousQueue)
+      for (const [key, data] of context?.previousQueue ?? []) {
+        queryClient.setQueryData(key, data)
+      }
     },
     onSettled: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.queue.list() })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.queue.all })
     },
   })
 }
