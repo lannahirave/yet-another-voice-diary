@@ -42,6 +42,7 @@ export interface Utterance {
   text: string
   lang?: Language
   source?: AudioSource
+  sessionStartedAt?: string
 }
 
 export interface UnknownQueueCandidate {

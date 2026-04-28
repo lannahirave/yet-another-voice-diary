@@ -139,19 +139,20 @@ class SessionRepo:
         """Every utterance attributed to this contact, newest session first.
 
         Joins utterances → speaker_segments to filter by ``contact_id``. The
-        order — newest session, then chronological inside the session — keeps
-        the contact page readable when there are many sessions.
+        order — newest session, then most recent utterance first — keeps the
+        contact page readable when there are many sessions.
         """
         cur = self.conn.execute(
             """
             SELECT u.id, u.session_id, u.started_ms, u.ended_ms, u.transcript,
                    u.language, u.confidence, u.speaker_segment_id, u.source,
-                   ss.contact_id AS speaker_contact_id
+                   ss.contact_id AS speaker_contact_id,
+                   s.started_at AS session_started_at
             FROM utterances u
             JOIN speaker_segments ss ON ss.id = u.speaker_segment_id
             JOIN sessions s ON s.id = u.session_id
             WHERE ss.contact_id = ?
-            ORDER BY s.started_at DESC, u.started_ms ASC
+            ORDER BY s.started_at DESC, u.started_ms DESC
             """,
             (contact_id,),
         )
@@ -257,6 +258,11 @@ class SessionRepo:
     def _utterance_row_to_dict(row: sqlite3.Row) -> dict:
         keys = row.keys() if hasattr(row, "keys") else ()
         source_val = row["source"] if "source" in keys else "mic"
+        session_started_at = (
+            _from_epoch(row["session_started_at"])
+            if "session_started_at" in keys and row["session_started_at"] is not None
+            else None
+        )
         return {
             "id": row["id"],
             "session_id": row["session_id"],
@@ -268,4 +274,5 @@ class SessionRepo:
             "speaker_segment_id": row["speaker_segment_id"],
             "speaker_contact_id": row["speaker_contact_id"],
             "source": source_val or "mic",
+            "session_started_at": session_started_at,
         }

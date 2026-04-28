@@ -42,6 +42,7 @@ class UtteranceOut(BaseModel):
     speaker_segment_id: Optional[str] = None
     speaker_contact_id: Optional[str] = None
     source: str = "mic"
+    session_started_at: Optional[datetime] = None
 
 
 class UtteranceCreate(BaseModel):

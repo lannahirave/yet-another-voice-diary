@@ -265,27 +265,52 @@ export function Contacts() {
               </div>
             )}
 
-            {tab === 'utterances' && (
-              <div style={ctS.utterancesList}>
-                {utterancesQuery.isLoading && (
-                  <div style={ctS.utterancesEmpty}>
-                    {t('contacts.utterancesLoading')}
-                  </div>
-                )}
-                {!utterancesQuery.isLoading && (utterancesQuery.data?.length ?? 0) === 0 && (
-                  <div style={ctS.utterancesEmpty}>
-                    {t('contacts.utterancesEmpty')}
-                  </div>
-                )}
-                {!utterancesQuery.isLoading &&
-                  (utterancesQuery.data ?? []).map((utterance) => (
-                    <div key={utterance.id} style={ctS.utteranceRow}>
-                      <div style={ctS.utteranceMeta}>{fmtMs(utterance.started_ms)}</div>
-                      <div style={ctS.utteranceText}>{utterance.transcript}</div>
+              {tab === 'utterances' && (
+                <div style={ctS.utterancesList}>
+                  {utterancesQuery.isLoading && (
+                    <div style={ctS.utterancesEmpty}>
+                      {t('contacts.utterancesLoading')}
                     </div>
-                  ))}
-              </div>
-            )}
+                  )}
+                  {!utterancesQuery.isLoading && (utterancesQuery.data?.length ?? 0) === 0 && (
+                    <div style={ctS.utterancesEmpty}>
+                      {t('contacts.utterancesEmpty')}
+                    </div>
+                  )}
+                  {!utterancesQuery.isLoading &&
+                    (() => {
+                      const utterances = utterancesQuery.data ?? []
+                      const grouped: { label: string; items: typeof utterances }[] = []
+                      for (const u of utterances) {
+                        const dateStr = u.session_started_at
+                          ? new Date(u.session_started_at).toLocaleDateString('uk-UA', {
+                              day: 'numeric',
+                              month: 'long',
+                              year: 'numeric',
+                            })
+                          : ''
+                        const label = dateStr || '—'
+                        const last = grouped[grouped.length - 1]
+                        if (last && last.label === label) {
+                          last.items.push(u)
+                        } else {
+                          grouped.push({ label, items: [u] })
+                        }
+                      }
+                      return grouped.map((group) => (
+                        <div key={group.label}>
+                          <div style={ctS.utteranceDayHeader}>{group.label}</div>
+                          {group.items.map((utterance) => (
+                            <div key={utterance.id} style={ctS.utteranceRow}>
+                              <div style={ctS.utteranceMeta}>{fmtMs(utterance.started_ms)}</div>
+                              <div style={ctS.utteranceText}>{utterance.transcript}</div>
+                            </div>
+                          ))}
+                        </div>
+                      ))
+                    })()}
+                </div>
+              )}
 
             {tab === 'notes' && (
               <textarea
@@ -457,6 +482,17 @@ const ctS: Record<string, CSSProperties> = {
     boxSizing: 'border-box',
   },
   utterancesList: { display: 'flex', flexDirection: 'column', gap: 8 },
+  utteranceDayHeader: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--text-muted)',
+    fontFamily: 'var(--mono)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em',
+    padding: '10px 0 4px 0',
+    borderBottom: '1px solid var(--border)',
+    marginBottom: 4,
+  },
   utteranceRow: {
     display: 'grid',
     gridTemplateColumns: '52px 1fr',

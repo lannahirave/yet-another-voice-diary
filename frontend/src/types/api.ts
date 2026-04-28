@@ -22,6 +22,7 @@ export interface ApiUtterance {
   speaker_segment_id: string | null
   speaker_contact_id: string | null
   source?: string
+  session_started_at?: string
 }
 
 export interface ApiContact {
