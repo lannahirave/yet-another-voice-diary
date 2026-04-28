@@ -205,6 +205,13 @@ class PyAnnoteDiarizationProvider:
         )
         try:
             _remove_speechbrain_optional_lazy_imports()
+            # lightning 2.4+ lazy-loads subpackages; force-load 'utilities'
+            # before pyannote triggers pl_legacy_patch() which accesses
+            # pl.utilities.argparse via attribute lookup (AttributeError).
+            try:
+                import lightning.pytorch.utilities  # noqa: F401
+            except Exception:
+                pass
             with _suppress_unused_pyannote_torchcodec_warning():
                 from pyannote.audio import Pipeline  # type: ignore[import-untyped]
         except Exception as exc:
