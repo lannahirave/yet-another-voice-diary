@@ -182,17 +182,12 @@ function ModelCard({
       {selected && <div style={stS.modelCheck}>✓</div>}
       <div style={stS.modelTop}>
         <span style={stS.modelName}>{model.name}</span>
-        <span
-          style={{
-            fontSize: 11,
-            fontFamily: 'var(--mono)',
-            color: STATE_COLORS[state],
-          }}
-        >
-          ● {stateLabel}
-        </span>
       </div>
       <div style={stS.modelMeta}>
+        <span style={{ color: STATE_COLORS[state], fontWeight: 500 }}>
+          ● {stateLabel}
+        </span>
+        <span style={{ color: 'var(--border-str)' }}>·</span>
         <span>{model.size}</span>
         <span style={{ color: 'var(--border-str)' }}>·</span>
         <span>{speedLabel}</span>
@@ -923,11 +918,12 @@ const stS: Record<string, CSSProperties> = {
   },
   modelCheck: {
     position: 'absolute',
-    top: 11,
-    right: 12,
+    top: 13,
+    right: 14,
     color: 'var(--accent)',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 700,
+    lineHeight: 1,
   },
   modelTop: {
     display: 'flex',
