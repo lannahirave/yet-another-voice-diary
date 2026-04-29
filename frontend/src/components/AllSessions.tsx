@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useContactsData } from '../query/contacts'
 import { useSessionUtterancesQuery, useSessionsListQuery } from '../query/sessions'
+import { updateSession } from '../api/sessions'
 import { Avatar } from './shared/Avatar'
 import { highlight } from '../utils/highlight'
 
@@ -76,7 +77,7 @@ export function AllSessions() {
               <div style={asS.cardTop}>
                 <div
                   style={asS.cardTitle}
-                  onDoubleClick={(e) => {
+                  onClick={(e) => {
                     e.stopPropagation()
                     setEditing(item.id)
                   }}
@@ -86,9 +87,11 @@ export function AllSessions() {
                       autoFocus
                       defaultValue={titles[item.id] ?? item.title}
                       style={asS.titleInput}
-                      onBlur={(e) => {
-                        setTitles((current) => ({ ...current, [item.id]: e.target.value }))
+                      onBlur={async (e) => {
+                        const value = e.target.value.trim() || ''
+                        setTitles((current) => ({ ...current, [item.id]: value }))
                         setEditing(null)
+                        try { await updateSession(item.id, { title: value }) } catch {}
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
