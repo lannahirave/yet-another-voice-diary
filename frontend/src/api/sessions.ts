@@ -32,10 +32,10 @@ export const listUtterances = (sessionId: string) =>
   apiFetch<ApiUtterance[]>(`/sessions/${sessionId}/utterances`)
 
 export const getUtteranceCandidates = (utteranceId: string) =>
-  apiFetch<ApiUtteranceCandidates>(`/utterances/${utteranceId}/candidates`)
+  apiFetch<ApiUtteranceCandidates>(`/sessions/utterances/${utteranceId}/candidates`)
 
 export const identifyUtterance = (utteranceId: string, contactId: string) =>
-  apiFetch<ApiUtteranceIdentifyResponse>(`/utterances/${utteranceId}/identify`, {
+  apiFetch<ApiUtteranceIdentifyResponse>(`/sessions/utterances/${utteranceId}/identify`, {
     method: 'POST',
     body: JSON.stringify({ contact_id: contactId }),
   })
