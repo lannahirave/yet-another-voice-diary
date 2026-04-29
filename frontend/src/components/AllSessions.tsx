@@ -174,7 +174,32 @@ export function AllSessions() {
           <>
             <div style={asS.transcriptHeader}>
               <div>
-                <div style={asS.transcriptTitle}>{titles[session.id] ?? session.title}</div>
+                {editing === session.id ? (
+                  <input
+                    autoFocus
+                    defaultValue={titles[session.id] ?? session.title}
+                    style={asS.titleInput}
+                    onBlur={async (e) => {
+                      const value = e.target.value.trim() || ''
+                      setTitles((current) => ({ ...current, [session.id]: value }))
+                      setEditing(null)
+                      try { await updateSession(session.id, { title: value }) } catch {}
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      ...asS.transcriptTitle,
+                      ...(!(titles[session.id] ?? session.title) ? asS.cardTitleEmpty : {}),
+                    }}
+                    onClick={() => setEditing(session.id)}
+                  >
+                    {(titles[session.id] ?? session.title) || t('common.noTitle')}
+                  </div>
+                )}
                 <div style={asS.transcriptMeta}>
                   {session.date} · {session.time}{session.duration ? ` · ${session.duration}` : ''}
                 </div>
@@ -387,7 +412,7 @@ const asS: Record<string, CSSProperties> = {
     flexShrink: 0,
     background: 'var(--surface)',
   },
-  transcriptTitle: { fontSize: 14.5, fontWeight: 600, color: 'var(--text)', marginBottom: 2 },
+  transcriptTitle: { fontSize: 14.5, fontWeight: 600, color: 'var(--text)', marginBottom: 2, cursor: 'pointer' },
   transcriptMeta: { fontSize: 11, color: 'var(--text-dim)', fontFamily: 'var(--mono)' },
   searchBox: {
     display: 'flex',
