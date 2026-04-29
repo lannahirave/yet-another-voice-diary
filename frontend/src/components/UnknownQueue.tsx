@@ -121,11 +121,16 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
             {currentSessionId && (
               <option value="current">{t('queue.sessionFilterCurrent')}</option>
             )}
-            {(sessionsQuery.data ?? []).map(({ session_id, title }) => (
-              <option key={session_id} value={session_id}>
-                {title || session_id}
-              </option>
-            ))}
+            {(sessionsQuery.data ?? []).map(({ session_id, title, started_at }) => {
+              const display =
+                title ||
+                `${session_id.slice(0, 4)}… ${new Date(started_at * 1000).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })}`
+              return (
+                <option key={session_id} value={session_id}>
+                  {display}
+                </option>
+              )
+            })}
           </select>
       </div>
 

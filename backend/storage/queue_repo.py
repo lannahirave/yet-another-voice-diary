@@ -127,7 +127,9 @@ class QueueRepo:
         """Return distinct session IDs and titles that have unresolved items."""
         cur = self.conn.execute(
             """
-            SELECT DISTINCT ss.session_id, COALESCE(s.title, '') AS title
+            SELECT DISTINCT ss.session_id,
+                   COALESCE(NULLIF(s.title, ''), NULL) AS title,
+                   s.started_at
             FROM unknown_queue q
             JOIN speaker_segments ss ON ss.id = q.speaker_segment_id
             LEFT JOIN sessions s ON s.id = ss.session_id
@@ -136,7 +138,11 @@ class QueueRepo:
             """
         )
         return [
-            {"session_id": r["session_id"], "title": r["title"] or r["session_id"]}
+            {
+                "session_id": r["session_id"],
+                "title": r["title"] or "",
+                "started_at": r["started_at"],
+            }
             for r in cur.fetchall()
         ]
 
