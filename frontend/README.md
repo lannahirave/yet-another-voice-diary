@@ -57,6 +57,26 @@ Two model lifecycle toggles:
 - **Unload models after Stop** (`POST /config/unload-after-stop`) — frees RAM between sessions
 - **Preload models on app start** (`POST /config/preload-on-start`) — loads ML models in background threads at `create_app()` time; the existing SSE progress infrastructure auto-discovers LOADING providers on mount
 
+## Light/dark theme
+
+Settings > General > Appearance. Persisted in `localStorage('vd-theme')`. Inline `<script>` in `index.html` sets `[data-theme]` attribute before first paint to prevent flash. CSS variables in `tokens.css` define both palettes with smooth `transition`.
+
+## Inline session rename
+
+Double-click a session title in either the list card or the transcript panel header → the transcript panel shows an inline input with accent border. Type a name, press Enter or blur → `PATCH /sessions/{id}` persists to backend, React Query cache invalidates so the new title survives tab switches. Empty/default titles show a dashed-border CTA pill.
+
+## Inline utterance identify
+
+In `CurrentSession`, unknown utterances show a clickable "Хто це сказав?" button. Fetches candidates via `GET /sessions/utterances/{id}/candidates` (lightweight — uses stored speaker_segment embeddings, no ML loading). Shows contact pills with similarity % and a skeleton while loading. On select → `POST /sessions/utterances/{id}/identify` assigns contact + cascade-checks remaining unknown utterances in the same session.
+
+## Server-side queue search
+
+Search and session filter in the unknown queue now use backend SQL (`LIKE` on quote transcripts across all items, not just loaded page). 300ms debounce. Queue list paginated 20 items at a time with "Load more". Sidebar badge uses lightweight `GET /unknown-queue/count`.
+
+## Query caching
+
+Global defaults changed to `staleTime: Infinity, refetchOnWindowFocus: false`. Queries only refetch on explicit invalidation (mutations) or per-query polling overrides (`staleTime: 5_000` on queue list, `10_000` on count).
+
 ## Common commands
 
 ```bash

@@ -55,6 +55,8 @@ python -m backend.run
 | DELETE | `/sessions/{id}` | Delete (cascade utterances + segments) |
 | GET | `/sessions/{id}/utterances` | Utterances for session |
 | POST | `/sessions/{id}/utterances` | Create utterance |
+| GET | `/sessions/utterances/{id}/candidates` | Candidate contacts for one utterance's voiceprint |
+| POST | `/sessions/utterances/{id}/identify` | Assign speaker + session-scoped cascade |
 
 ### Contacts (`/contacts`)
 | Method | Path | Description |
@@ -70,8 +72,9 @@ python -m backend.run
 ### Unknown Queue (`/unknown-queue`)
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/unknown-queue` | Clustered unresolved items (greedy centroid by voiceprint) |
-| POST | `/unknown-queue/resolve` | Batch resolve with cascade auto-identification |
+| GET | `/unknown-queue` | Clustered unresolved items; `?q=` search, `?session_id=` filter, `?limit=&offset=` pagination |
+| GET | `/unknown-queue/count` | Lightweight `SELECT COUNT(*)` for badge |
+| POST | `/unknown-queue/resolve` | Batch resolve with cascade auto-identification (batched 100 at a time) |
 | POST | `/unknown-queue/skip` | Batch skip (re-queue by bumping timestamp) |
 | POST | `/unknown-queue/{id}/resolve` | Legacy single-item resolve |
 | POST | `/unknown-queue/{id}/skip` | Legacy single-item skip |
@@ -268,3 +271,31 @@ python -m pytest backend/e2e-tests/ -v
 **Dev:** `pytest`, `pytest-cov`, `pytest-asyncio`, `httpx`, `mypy`
 **ML (optional):** `faster-whisper`, `torch==2.8.0`, `torchaudio==2.8.0`, `speechbrain`, `silero-vad`, `pyannote.audio==4.0.3`, `transformers>=4.40`
 **ML-NeMo (optional):** `nemo_toolkit[asr]`
+
+## Recent Additions
+
+### Inline utterance identification
+- `GET /sessions/utterances/{id}/candidates` — returns top 3 contacts from stored embedding (no ML loading)
+- `POST /sessions/utterances/{id}/identify` — assigns contact to speaker_segment, creates voice_profile, session-scoped cascade
+- Concurrency protection: idempotent on same contact, 409 on different contact
+
+### Queue pagination, search, count
+- `GET /unknown-queue?limit=20&offset=0` — paginated clusters
+- `GET /unknown-queue?q=...&session_id=...` — server-side search across all items
+- `GET /unknown-queue/count` — lightweight count for Sidebar badge
+- `_cascade_identify()` batched at 100 items per iteration
+- `list_unresolved_with_extras()` accepts optional `limit`, `q`, `session_id` filters
+- All queries sorted `DESC` (most recent first)
+
+### Model preload on startup
+- `ProviderConfig.preload_on_start` toggle in config
+- `_startup_preload()` in `create_app()` spawns daemon threads per provider
+- `POST /config/preload-on-start` and Settings UI toggle
+
+### Dev audio capture disabled by default
+- `_dev_audio_enabled()` now requires explicit `VOICE_DIARY_SAVE_DEV_AUDIO=1`; no longer auto-enabled in `NODE_ENV=development`
+- Capped at 5 minutes per track to prevent unbounded memory
+
+### Lightning 2.4+ compatibility
+- `_ensure_lightning_utilities()` force-pins `lightning.pytorch.utilities` as module attribute
+- Pre-import of `lightning.pytorch.utilities` before PyAnnote loads
