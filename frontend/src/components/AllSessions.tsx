@@ -78,7 +78,7 @@ export function AllSessions() {
                 <div
                   style={{
                     ...asS.cardTitle,
-                    ...(!(titles[item.id] ?? item.title) ? asS.cardTitleEmpty : {}),
+                    ...((titles[item.id] ?? item.title) === t('common.noTitle') ? asS.cardTitleEmpty : {}),
                   }}
                   onClick={(e) => {
                     e.stopPropagation()
@@ -193,7 +193,7 @@ export function AllSessions() {
                   <div
                     style={{
                       ...asS.transcriptTitle,
-                      ...(!(titles[session.id] ?? session.title) ? asS.cardTitleEmpty : {}),
+                      ...((titles[session.id] ?? session.title) === t('common.noTitle') ? asS.cardTitleEmpty : {}),
                     }}
                     onClick={() => setEditing(session.id)}
                   >
