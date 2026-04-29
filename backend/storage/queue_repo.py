@@ -33,7 +33,12 @@ class QueueRepo:
         )
         return [self._row_to_dict(r) for r in cur.fetchall()]
 
-    def list_unresolved_with_extras(self, limit: int | None = None) -> list[dict]:
+    def list_unresolved_with_extras(
+        self,
+        limit: int | None = None,
+        q: str | None = None,
+        session_id: str | None = None,
+    ) -> list[dict]:
         """Return unresolved rows joined with embedding bytes + best utterance.
 
         Adds, per row:
@@ -44,6 +49,8 @@ class QueueRepo:
 
         Designed for the cluster builder — a single query per page load instead
         of N+1 lookups. When *limit* is given, only the first N rows are returned.
+        When *q* is given, only rows whose quote contains the term (case-insensitive)
+        are included. When *session_id* is given, only that session's rows are included.
         """
         sql = """
             SELECT q.id, q.speaker_segment_id, q.created_at, ss.session_id,
@@ -75,11 +82,22 @@ class QueueRepo:
                 GROUP BY u1.speaker_segment_id
             ) longest ON longest.speaker_segment_id = ss.id
             WHERE q.resolved_contact_id IS NULL
-            ORDER BY q.created_at DESC
         """
+        if q:
+            sql += " AND longest.transcript LIKE ?"
+        if session_id:
+            sql += " AND ss.session_id = ?"
+        sql += " ORDER BY q.created_at DESC"
         if limit is not None:
             sql += f" LIMIT {int(limit)}"
-        cur = self.conn.execute(sql)
+
+        params: list = []
+        if q:
+            params.append(f"%{q}%")
+        if session_id:
+            params.append(session_id)
+
+        cur = self.conn.execute(sql, params)
         out: list[dict] = []
         for row in cur.fetchall():
             out.append(

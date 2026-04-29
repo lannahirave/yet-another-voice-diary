@@ -36,10 +36,15 @@ function patchSessionUtterances(
   return changed ? next : utterances
 }
 
-export function useQueueListQuery(limit = 20, offset = 0) {
+export function useQueueListQuery(
+  limit = 20,
+  offset = 0,
+  q?: string | null,
+  sessionId?: string | null,
+) {
   return useQuery({
-    queryKey: queryKeys.queue.list({ limit, offset }),
-    queryFn: () => listQueue(limit, offset),
+    queryKey: queryKeys.queue.list({ limit, offset, q: q ?? undefined, sessionId: sessionId ?? undefined }),
+    queryFn: () => listQueue(limit, offset, q, sessionId),
     staleTime: 5_000,
     placeholderData: (prev) => prev,
     select: (clusters) => clusters.map((cluster) => adaptQueueCluster(cluster)),

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useContactsData, useCreateContactMutation } from '../query/contacts'
@@ -9,11 +9,6 @@ import {
   useSkipQueueClusterMutation,
 } from '../query/queue'
 import type { UnknownQueueItem } from '../types/domain'
-import {
-  deriveQueueSessionOptions,
-  filterUnknownQueueItems,
-  normalizeQueueSessionFilter,
-} from '../utils/unknownQueueFilters'
 
 interface UnknownQueueProps {
   onApplyLiveResolution?: (segmentIds: string[], contactId: string) => (() => void) | void
@@ -25,7 +20,20 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
   const { contacts, contactById } = useContactsData()
   const PAGE_SIZE = 20
   const [offset, setOffset] = useState(0)
-  const queueQuery = useQueueListQuery(PAGE_SIZE, offset)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
+  const [sessionFilter, setSessionFilter] = useState<string>('all')
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+
+  const resolvedSessionId =
+    sessionFilter === 'all' ? null : sessionFilter === 'current' ? currentSessionId : sessionFilter
+
+  const queueQuery = useQueueListQuery(
+    PAGE_SIZE,
+    offset,
+    debouncedQ || null,
+    resolvedSessionId,
+  )
   const countQuery = useQueueCountQuery()
   const createContactMutation = useCreateContactMutation()
   const resolveMutation = useResolveQueueClusterMutation({
@@ -37,34 +45,31 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
   const [newContactName, setNewContactName] = useState('')
   const [pickExistingId, setPickExistingId] = useState<string | null>(null)
   const [pickExistingQuery, setPickExistingQuery] = useState('')
-  const [searchQuery, setSearchQuery] = useState('')
-  const [sessionFilter, setSessionFilter] = useState<string>('all')
+
+  // Debounce search input to avoid hammering the backend
+  useEffect(() => {
+    clearTimeout(debounceRef.current)
+    if (!searchQuery.trim()) {
+      setDebouncedQ('')
+      setOffset(0)
+      return
+    }
+    debounceRef.current = setTimeout(() => {
+      setDebouncedQ(searchQuery.trim())
+      setOffset(0)
+    }, 300)
+    return () => clearTimeout(debounceRef.current)
+  }, [searchQuery])
+
+  // Reset offset when session filter changes
+  useEffect(() => {
+    setOffset(0)
+  }, [sessionFilter])
 
   const items = queueQuery.data ?? []
   const totalCount = countQuery.data ?? 0
   const hasMore = offset + PAGE_SIZE < totalCount && items.length === PAGE_SIZE
   const error = queueQuery.error ? t('queue.backendUnavailable') : null
-  const sessionOptions = deriveQueueSessionOptions(items)
-
-  useEffect(() => {
-    const normalizedFilter = normalizeQueueSessionFilter(
-      sessionFilter,
-      currentSessionId,
-      sessionOptions,
-    )
-    if (normalizedFilter !== sessionFilter) {
-      setSessionFilter(normalizedFilter)
-    }
-    setOffset(0)
-  }, [currentSessionId, sessionFilter, sessionOptions])
-
-  const filteredItems = filterUnknownQueueItems({
-    items,
-    searchQuery,
-    sessionFilter,
-    currentSessionId,
-    lookupContactName: (contactId) => contactById(contactId)?.name ?? null,
-  })
 
   const resolve = async (cluster: UnknownQueueItem, contactId: string) => {
     await resolveMutation.mutateAsync({ cluster, contactId })
@@ -105,21 +110,16 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
       </div>
       <div style={uqS.filtersBar}>
         <span style={uqS.filterLabel}>{t('queue.sessionFilterLabel')}</span>
-        <select
-          value={sessionFilter}
-          onChange={(e) => setSessionFilter(e.target.value)}
-          style={uqS.filterSelect}
-        >
-          <option value="all">{t('queue.sessionFilterAll')}</option>
-          {currentSessionId && (
-            <option value="current">{t('queue.sessionFilterCurrent')}</option>
-          )}
-          {sessionOptions.map(({ sessionId, sessionTitle }) => (
-            <option key={sessionId} value={sessionId}>
-              {sessionTitle || sessionId}
-            </option>
-          ))}
-        </select>
+          <select
+            value={sessionFilter}
+            onChange={(e) => setSessionFilter(e.target.value)}
+            style={uqS.filterSelect}
+          >
+            <option value="all">{t('queue.sessionFilterAll')}</option>
+            {currentSessionId && (
+              <option value="current">{t('queue.sessionFilterCurrent')}</option>
+            )}
+          </select>
       </div>
 
       <div style={uqS.list}>
@@ -133,14 +133,14 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
           </div>
         )}
 
-        {!error && items.length > 0 && filteredItems.length === 0 && (
+        {!error && searchQuery && items.length === 0 && !queueQuery.isFetching && (
           <div style={uqS.empty}>
             <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>{t('queue.noMatches')}</div>
             <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>{t('queue.searchPlaceholder')}</div>
           </div>
         )}
 
-        {filteredItems.map((item, idx) => {
+        {items.map((item, idx) => {
           const candidates = item.candidates.map((candidate) => ({
             ...candidate,
             contact: contactById(candidate.contactId),

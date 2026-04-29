@@ -1,8 +1,17 @@
 import type { ApiQueueCluster, ApiQueueResolveResponse } from '../types/api'
 import { apiFetch } from './client'
 
-export const listQueue = (limit = 20, offset = 0) =>
-  apiFetch<ApiQueueCluster[]>(`/unknown-queue?limit=${limit}&offset=${offset}`)
+export const listQueue = (
+  limit = 20,
+  offset = 0,
+  q?: string | null,
+  sessionId?: string | null,
+) => {
+  let path = `/unknown-queue?limit=${limit}&offset=${offset}`
+  if (q) path += `&q=${encodeURIComponent(q)}`
+  if (sessionId) path += `&session_id=${encodeURIComponent(sessionId)}`
+  return apiFetch<ApiQueueCluster[]>(path)
+}
 
 export const getQueueCount = () =>
   apiFetch<{ count: number }>('/unknown-queue/count')

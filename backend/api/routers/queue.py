@@ -52,8 +52,14 @@ def list_queue(
     conn: sqlite3.Connection = Depends(get_db),
     limit: int = Query(20, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    q: str | None = Query(None),
+    session_id: str | None = Query(None),
 ):
-    rows = QueueRepo(conn).list_unresolved_with_extras()
+    rows = QueueRepo(conn).list_unresolved_with_extras(
+        limit=None,  # clustering needs all matching rows
+        q=q.strip() if q else None,
+        session_id=session_id.strip() if session_id else None,
+    )
     if not rows:
         return []
 
