@@ -46,6 +46,24 @@ def _remove_speechbrain_optional_lazy_imports() -> None:
             vars(speechbrain).pop(name, None)
 
 
+def _ensure_lightning_utilities() -> None:
+    """Make ``lightning.pytorch.utilities`` accessible as a module attribute.
+
+    lightning >= 2.4 lazy-loads subpackages.  When
+    ``import lightning.pytorch as pl`` runs inside the ``pl_legacy_patch``
+    context manager (triggered by PyAnnote checkpoint loading), Python
+    may not yet have ``utilities`` registered as a ``pl`` attribute.
+    Force the import and pin the attribute so the lookup succeeds.
+    """
+    try:
+        import lightning.pytorch  # noqa: F401
+        import lightning.pytorch.utilities as _ut
+        import lightning.pytorch as _pl
+        _pl.utilities = _ut  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+
 @contextmanager
 def _speechbrain_windows_inspect_compat():
     """
@@ -205,13 +223,11 @@ class PyAnnoteDiarizationProvider:
         )
         try:
             _remove_speechbrain_optional_lazy_imports()
-            # lightning 2.4+ lazy-loads subpackages; force-load 'utilities'
+            # lightning 2.4+ lazy-loads subpackages; force-ensure
+            # 'utilities' is available as an attribute on lightning.pytorch
             # before pyannote triggers pl_legacy_patch() which accesses
-            # pl.utilities.argparse via attribute lookup (AttributeError).
-            try:
-                import lightning.pytorch.utilities  # noqa: F401
-            except Exception:
-                pass
+            # pl.utilities via attribute lookup.
+            _ensure_lightning_utilities()
             with _suppress_unused_pyannote_torchcodec_warning():
                 from pyannote.audio import Pipeline  # type: ignore[import-untyped]
         except Exception as exc:
@@ -224,6 +240,7 @@ class PyAnnoteDiarizationProvider:
 
         try:
             _remove_speechbrain_optional_lazy_imports()
+            _ensure_lightning_utilities()
             speechbrain_compat = (
                 _speechbrain_windows_inspect_compat()
                 if sys.platform.startswith("win")
