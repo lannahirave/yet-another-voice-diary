@@ -80,7 +80,7 @@ export function AllSessions() {
                     ...asS.cardTitle,
                     ...((titles[item.id] ?? item.title) === t('common.noTitle') ? asS.cardTitleEmpty : {}),
                   }}
-                  onClick={(e) => {
+                  onDoubleClick={(e) => {
                     e.stopPropagation()
                     setEditing(item.id)
                   }}
@@ -195,7 +195,7 @@ export function AllSessions() {
                       ...asS.transcriptTitle,
                       ...((titles[session.id] ?? session.title) === t('common.noTitle') ? asS.cardTitleEmpty : {}),
                     }}
-                    onClick={() => setEditing(session.id)}
+                    onDoubleClick={() => setEditing(session.id)}
                   >
                     {(titles[session.id] ?? session.title) || t('common.noTitle')}
                   </div>
