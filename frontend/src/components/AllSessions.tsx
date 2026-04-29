@@ -76,7 +76,10 @@ export function AllSessions() {
               {active && <div style={asS.cardLine} />}
               <div style={asS.cardTop}>
                 <div
-                  style={asS.cardTitle}
+                  style={{
+                    ...asS.cardTitle,
+                    ...(!(titles[item.id] ?? item.title) ? asS.cardTitleEmpty : {}),
+                  }}
                   onClick={(e) => {
                     e.stopPropagation()
                     setEditing(item.id)
@@ -98,7 +101,7 @@ export function AllSessions() {
                       }}
                     />
                   ) : (
-                    titles[item.id] ?? item.title
+                    (titles[item.id] ?? (item.title || t('common.noTitle')))
                   )}
                 </div>
                 <div style={asS.cardMeta}>
@@ -326,6 +329,16 @@ const asS: Record<string, CSSProperties> = {
     color: 'var(--text)',
     lineHeight: 1.3,
     marginBottom: 2,
+    cursor: 'pointer',
+  },
+  cardTitleEmpty: {
+    border: '1px dashed var(--border-str)',
+    borderRadius: 6,
+    padding: '4px 8px',
+    color: 'var(--text-soft)',
+    background: 'var(--surface2)',
+    fontWeight: 500,
+    fontStyle: 'italic',
   },
   cardMeta: { fontSize: 10.5, color: 'var(--text-dim)', fontFamily: 'var(--mono)' },
   cardRow: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 },
