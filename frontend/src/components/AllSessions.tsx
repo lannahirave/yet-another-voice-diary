@@ -4,12 +4,15 @@ import { useTranslation } from 'react-i18next'
 import { useContactsData } from '../query/contacts'
 import { useSessionUtterancesQuery, useSessionsListQuery } from '../query/sessions'
 import { updateSession } from '../api/sessions'
+import { queryKeys } from '../query/keys'
+import { useQueryClient } from '@tanstack/react-query'
 import { Avatar } from './shared/Avatar'
 import { highlight } from '../utils/highlight'
 
 export function AllSessions() {
   const { t } = useTranslation()
   const { contactById } = useContactsData()
+  const queryClient = useQueryClient()
   const sessionsQuery = useSessionsListQuery()
   const [selected, setSelected] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
@@ -87,25 +90,7 @@ export function AllSessions() {
                     setEditing(item.id)
                   }}
                 >
-                  {editing === item.id ? (
-                    <input
-                      autoFocus
-                      defaultValue={titles[item.id] ?? item.title}
-                      style={asS.titleInput}
-                      onBlur={async (e) => {
-                        if (Date.now() - editingSince.current < 100) return
-                        const value = e.target.value.trim() || ''
-                        setTitles((current) => ({ ...current, [item.id]: value }))
-                        setEditing(null)
-                        try { await updateSession(item.id, { title: value }) } catch {}
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                      }}
-                    />
-                  ) : (
-                    (titles[item.id] ?? (item.title || t('common.noTitle')))
-                  )}
+                  {(titles[item.id] ?? (item.title || t('common.noTitle')))}
                 </div>
                 <div style={asS.cardMeta}>
                   {item.date} · {item.time}
@@ -188,6 +173,7 @@ export function AllSessions() {
                       setTitles((current) => ({ ...current, [session.id]: value }))
                       setEditing(null)
                       try { await updateSession(session.id, { title: value }) } catch {}
+                      queryClient.invalidateQueries({ queryKey: queryKeys.sessions.list() })
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
