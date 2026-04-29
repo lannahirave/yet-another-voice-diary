@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useContactsData } from '../query/contacts'
@@ -15,6 +15,7 @@ export function AllSessions() {
   const [editing, setEditing] = useState<string | null>(null)
   const [titles, setTitles] = useState<Record<string, string>>({})
   const [searchText, setSearchText] = useState('')
+  const editingSince = useRef(0)
 
   const sessions = sessionsQuery.data ?? []
   const isLoading = sessionsQuery.isLoading
@@ -82,6 +83,7 @@ export function AllSessions() {
                   }}
                   onDoubleClick={(e) => {
                     e.stopPropagation()
+                    editingSince.current = Date.now()
                     setEditing(item.id)
                   }}
                 >
@@ -91,6 +93,7 @@ export function AllSessions() {
                       defaultValue={titles[item.id] ?? item.title}
                       style={asS.titleInput}
                       onBlur={async (e) => {
+                        if (Date.now() - editingSince.current < 100) return
                         const value = e.target.value.trim() || ''
                         setTitles((current) => ({ ...current, [item.id]: value }))
                         setEditing(null)
@@ -180,6 +183,7 @@ export function AllSessions() {
                     defaultValue={titles[session.id] ?? session.title}
                     style={asS.titleInput}
                     onBlur={async (e) => {
+                      if (Date.now() - editingSince.current < 100) return
                       const value = e.target.value.trim() || ''
                       setTitles((current) => ({ ...current, [session.id]: value }))
                       setEditing(null)
@@ -195,7 +199,10 @@ export function AllSessions() {
                       ...asS.transcriptTitle,
                       ...((titles[session.id] ?? session.title) === t('common.noTitle') ? asS.cardTitleEmpty : {}),
                     }}
-                    onDoubleClick={() => setEditing(session.id)}
+                    onDoubleClick={() => {
+                      editingSince.current = Date.now()
+                      setEditing(session.id)
+                    }}
                   >
                     {(titles[session.id] ?? session.title) || t('common.noTitle')}
                   </div>
