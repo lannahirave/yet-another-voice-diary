@@ -16,6 +16,9 @@ export const listQueue = (
 export const getQueueCount = () =>
   apiFetch<{ count: number }>('/unknown-queue/count')
 
+export const getQueueSessions = () =>
+  apiFetch<Array<{ session_id: string; title: string }>>('/unknown-queue/sessions')
+
 export const resolveQueueCluster = (queueIds: string[], contactId: string) =>
   apiFetch<ApiQueueResolveResponse>('/unknown-queue/resolve', {
     method: 'POST',

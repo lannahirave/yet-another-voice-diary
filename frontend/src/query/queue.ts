@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { adaptQueueCluster } from '../api/adapters'
-import { resolveQueueCluster, skipQueueCluster, listQueue, getQueueCount } from '../api/queue'
+import { resolveQueueCluster, skipQueueCluster, listQueue, getQueueCount, getQueueSessions } from '../api/queue'
 import type { UnknownQueueItem, Utterance } from '../types/domain'
 import { queryKeys } from './keys'
 
@@ -57,6 +57,14 @@ export function useQueueCountQuery() {
     queryFn: getQueueCount,
     staleTime: 10_000,
     select: (data) => data.count,
+  })
+}
+
+export function useQueueSessionsQuery() {
+  return useQuery({
+    queryKey: queryKeys.queue.sessions(),
+    queryFn: getQueueSessions,
+    staleTime: 15_000,
   })
 }
 

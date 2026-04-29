@@ -123,6 +123,23 @@ class QueueRepo:
         )
         return int(cur.fetchone()[0])
 
+    def list_sessions_with_unresolved(self) -> list[dict]:
+        """Return distinct session IDs and titles that have unresolved items."""
+        cur = self.conn.execute(
+            """
+            SELECT DISTINCT ss.session_id, COALESCE(s.title, '') AS title
+            FROM unknown_queue q
+            JOIN speaker_segments ss ON ss.id = q.speaker_segment_id
+            LEFT JOIN sessions s ON s.id = ss.session_id
+            WHERE q.resolved_contact_id IS NULL
+            ORDER BY q.created_at DESC
+            """
+        )
+        return [
+            {"session_id": r["session_id"], "title": r["title"] or r["session_id"]}
+            for r in cur.fetchall()
+        ]
+
     def get(self, queue_id: str) -> Optional[dict]:
         cur = self.conn.execute(
             """

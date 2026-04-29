@@ -5,6 +5,7 @@ import { useContactsData, useCreateContactMutation } from '../query/contacts'
 import {
   useQueueListQuery,
   useQueueCountQuery,
+  useQueueSessionsQuery,
   useResolveQueueClusterMutation,
   useSkipQueueClusterMutation,
 } from '../query/queue'
@@ -35,6 +36,7 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
     resolvedSessionId,
   )
   const countQuery = useQueueCountQuery()
+  const sessionsQuery = useQueueSessionsQuery()
   const createContactMutation = useCreateContactMutation()
   const resolveMutation = useResolveQueueClusterMutation({
     onApplyLiveResolution,
@@ -119,6 +121,11 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
             {currentSessionId && (
               <option value="current">{t('queue.sessionFilterCurrent')}</option>
             )}
+            {(sessionsQuery.data ?? []).map(({ session_id, title }) => (
+              <option key={session_id} value={session_id}>
+                {title || session_id}
+              </option>
+            ))}
           </select>
       </div>
 

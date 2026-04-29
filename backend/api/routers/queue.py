@@ -156,6 +156,11 @@ def queue_count(conn: sqlite3.Connection = Depends(get_db)):
     return {"count": QueueRepo(conn).count_unresolved()}
 
 
+@router.get("/sessions")
+def queue_sessions(conn: sqlite3.Connection = Depends(get_db)):
+    return QueueRepo(conn).list_sessions_with_unresolved()
+
+
 def _cascade_identify(
     conn: sqlite3.Connection, threshold: float, embedding_model_id: str
 ) -> int:
