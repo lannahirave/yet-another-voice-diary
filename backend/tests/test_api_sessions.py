@@ -119,3 +119,43 @@ async def test_session_rename_title(client):
 async def test_session_rename_not_found(client):
     r = await client.patch("/sessions/does-not-exist", json={"title": "nope"})
     assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_session_rename_from_empty(client):
+    # Create untitled session (simulates "Без назви" default)
+    r = await client.post("/sessions", json={"title": ""})
+    assert r.status_code == 201
+    sid = r.json()["id"]
+    assert r.json()["title"] == ""
+
+    # Rename via inline edit (simulating transcript panel click → type → blur)
+    r = await client.patch(f"/sessions/{sid}", json={"title": "Morning standup"})
+    assert r.status_code == 200
+    assert r.json()["title"] == "Morning standup"
+
+    # Verify list reflects the change
+    sessions = (await client.get("/sessions")).json()
+    titles = [s["title"] for s in sessions if s["id"] == sid]
+    assert titles == ["Morning standup"]
+
+    await client.delete(f"/sessions/{sid}")
+
+
+@pytest.mark.asyncio
+async def test_session_rename_preserves_other_fields(client):
+    r = await client.post(
+        "/sessions",
+        json={"title": "original", "language_hint": "uk", "notes": "my notes"},
+    )
+    assert r.status_code == 201
+    sid = r.json()["id"]
+
+    r = await client.patch(f"/sessions/{sid}", json={"title": "renamed"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["title"] == "renamed"
+    assert data["language_hint"] == "uk"
+    assert data["notes"] == "my notes"
+
+    await client.delete(f"/sessions/{sid}")

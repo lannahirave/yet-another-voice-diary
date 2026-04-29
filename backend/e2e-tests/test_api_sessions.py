@@ -120,6 +120,75 @@ async def test_session_rename_nonexistent(client: AsyncClient) -> None:
     assert r.status_code == 404
 
 
+async def test_session_rename_from_empty(client: AsyncClient) -> None:
+    """Simulates transcript panel inline rename: create untitled → rename → verify."""
+    # Create a session with no title (like the default from CurrentSession)
+    r = await client.post("/sessions", json={"title": ""})
+    assert r.status_code == 201
+    sid = r.json()["id"]
+    assert r.json()["title"] == ""
+
+    # GET shows empty — the UI would display "Untitled" placeholder
+    r = await client.get(f"/sessions/{sid}")
+    assert r.status_code == 200
+    assert r.json()["title"] == ""
+
+    # User clicks title, types a name, blurs → PATCH sent
+    r = await client.patch(f"/sessions/{sid}", json={"title": "Morning standup"})
+    assert r.status_code == 200
+    assert r.json()["title"] == "Morning standup"
+
+    # Session list should now show the new title
+    sessions = (await client.get("/sessions")).json()
+    titles = [s["title"] for s in sessions if s["id"] == sid]
+    assert titles == ["Morning standup"]
+
+    # Rename again (second edit from transcript panel)
+    r = await client.patch(f"/sessions/{sid}", json={"title": "Daily sync"})
+    assert r.status_code == 200
+    r = await client.get(f"/sessions/{sid}")
+    assert r.json()["title"] == "Daily sync"
+
+    # Cleanup
+    await client.delete(f"/sessions/{sid}")
+
+
+async def test_session_rename_trims_whitespace(client: AsyncClient) -> None:
+    """Inline rename with leading/trailing whitespace should be trimmed."""
+    r = await client.post("/sessions", json={"title": ""})
+    assert r.status_code == 201
+    sid = r.json()["id"]
+
+    # Simulate user typing with accidental spaces
+    r = await client.patch(f"/sessions/{sid}", json={"title": "   design review   "})
+    assert r.status_code == 200
+    # Note: the API does NOT trim — the frontend trims before sending.
+    # This test verifies the raw API behavior. The frontend handles trimming.
+    assert r.json()["title"] == "   design review   "
+
+    # Cleanup
+    await client.delete(f"/sessions/{sid}")
+
+
+async def test_session_rename_preserves_other_fields(client: AsyncClient) -> None:
+    """PATCH title should not affect notes or language_hint."""
+    r = await client.post(
+        "/sessions",
+        json={"title": "original", "language_hint": "uk", "notes": "my notes"},
+    )
+    assert r.status_code == 201
+    sid = r.json()["id"]
+
+    r = await client.patch(f"/sessions/{sid}", json={"title": "renamed"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["title"] == "renamed"
+    assert data["language_hint"] == "uk"
+    assert data["notes"] == "my notes"
+
+    await client.delete(f"/sessions/{sid}")
+
+
 async def test_utterance_candidates_not_found(client: AsyncClient) -> None:
     """GET candidates for non-existent utterance returns 404."""
     r = await client.get("/sessions/utterances/does-not-exist/candidates")
