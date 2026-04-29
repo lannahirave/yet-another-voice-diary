@@ -18,6 +18,11 @@ export function AllSessions() {
   const [editing, setEditing] = useState<string | null>(null)
   const [titles, setTitles] = useState<Record<string, string>>({})
   const [searchText, setSearchText] = useState('')
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const [exportFormat, setExportFormat] = useState<'json' | 'md' | 'csv'>(() => {
+    try { return (localStorage.getItem('vd-export-format') as 'json' | 'md' | 'csv') || 'json' } catch { return 'json' }
+  })
+  const [exportDropdownOpen, setExportDropdownOpen] = useState(false)
   const editingSince = useRef(0)
 
   const sessions = sessionsQuery.data ?? []
@@ -41,6 +46,62 @@ export function AllSessions() {
       !searchText ||
       utterance.text.toLowerCase().includes(searchText.toLowerCase()),
   )
+
+  useEffect(() => {
+    if (!exportDropdownOpen) return
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setExportDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [exportDropdownOpen])
+
+  const doExport = (fmt?: 'json' | 'md' | 'csv') => {
+    if (!session) return
+    const format = fmt || exportFormat
+    const rows = filteredUtterances.map((u, i) => ({
+      time: u.time,
+      speaker: contactById(u.speakerId)?.name || 'unknown',
+      text: u.text,
+      lang: u.lang || '',
+      num: i + 1,
+    }))
+    const title = (titles[session.id] ?? session.title) || t('common.noTitle')
+    const date = session.date
+    const header = `${title} — ${date}`
+
+    let content: string; let mime: string; let ext: string
+
+    if (format === 'json') {
+      content = JSON.stringify(rows.map(r => ({time:r.time, speaker:r.speaker, text:r.text, lang:r.lang})), null, 2)
+      mime = 'application/json'; ext = 'json'
+    } else if (format === 'md') {
+      const lines = [`# ${header}`, '', '| # | Time | Speaker | Text |', '|---|---|---|---|']
+      for (const r of rows) lines.push(`| ${r.num} | ${r.time} | ${r.speaker} | ${r.text.replace(/\|/g, '\\|')} |`)
+      content = lines.join('\n')
+      mime = 'text/markdown'; ext = 'md'
+    } else {
+      const esc = (v: string) => `"${v.replace(/"/g, '""')}"`
+      content = 'time,speaker,text,lang\n'
+      for (const r of rows) content += `${esc(r.time)},${esc(r.speaker)},${esc(r.text)},${esc(r.lang)}\n`
+      mime = 'text/csv'; ext = 'csv'
+    }
+
+    const safeTitle = title.replace(/[^a-zA-Z0-9\u0400-\u04FF_-]+/g, '_').slice(0, 40) || 'session'
+    const blob = new Blob([content], { type: `${mime};charset=utf-8` })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `${safeTitle}.${ext}`; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const setFormatAndClose = (fmt: 'json' | 'md' | 'csv') => {
+    setExportFormat(fmt)
+    try { localStorage.setItem('vd-export-format', fmt) } catch {}
+    setExportDropdownOpen(false)
+  }
 
   return (
     <div style={asS.root}>
@@ -209,6 +270,47 @@ export function AllSessions() {
                   onChange={(e) => setSearchText(e.target.value)}
                   style={asS.searchInput}
                 />
+              </div>
+              <div ref={dropdownRef} style={{ position: 'relative' }}>
+                <div style={{ display: 'flex' }}>
+                  <button
+                    onClick={() => doExport()}
+                    disabled={filteredUtterances.length === 0}
+                    data-testid="export-btn"
+                    style={asS.exportBtn}
+                  >
+                    {exportFormat === 'json' ? t('allSessions.exportJson')
+                      : exportFormat === 'md' ? t('allSessions.exportMd')
+                      : t('allSessions.exportCsv')}
+                  </button>
+                  <button
+                    onClick={() => setExportDropdownOpen((prev) => !prev)}
+                    disabled={filteredUtterances.length === 0}
+                    data-testid="export-dropdown-toggle"
+                    style={asS.exportDropdownToggle}
+                  >
+                    ▾
+                  </button>
+                </div>
+                {exportDropdownOpen && (
+                  <div style={asS.exportMenu}>
+                    {(['json', 'md', 'csv'] as const).map((fmt) => (
+                      <button
+                        key={fmt}
+                        onClick={() => { setFormatAndClose(fmt); doExport(fmt) }}
+                        data-testid={`export-option-${fmt}`}
+                        style={{
+                          ...asS.exportMenuItem,
+                          ...(exportFormat === fmt ? asS.exportMenuItemActive : {}),
+                        }}
+                      >
+                        {fmt === 'json' ? t('allSessions.exportJson')
+                          : fmt === 'md' ? t('allSessions.exportMd')
+                          : t('allSessions.exportCsv')}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <div style={asS.transcriptBody}>
@@ -459,5 +561,59 @@ const asS: Record<string, CSSProperties> = {
     background: 'var(--surface2)',
     marginBottom: 6,
     animation: 'pulse 1.4s ease-in-out infinite',
+  },
+  exportBtn: {
+    background: 'var(--surface2)',
+    border: '1px solid var(--border)',
+    borderRight: 'none',
+    borderRadius: '6px 0 0 6px',
+    color: 'var(--text)',
+    fontSize: 12,
+    fontFamily: 'var(--sans)',
+    padding: '6px 14px',
+    cursor: 'pointer',
+    fontWeight: 500,
+    whiteSpace: 'nowrap',
+  },
+  exportDropdownToggle: {
+    background: 'var(--surface2)',
+    border: '1px solid var(--border)',
+    borderRadius: '0 6px 6px 0',
+    color: 'var(--text)',
+    fontSize: 11,
+    fontFamily: 'var(--sans)',
+    padding: '6px 8px',
+    cursor: 'pointer',
+  },
+  exportMenu: {
+    position: 'absolute',
+    top: '100%',
+    right: 0,
+    marginTop: 4,
+    background: 'var(--bg)',
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    boxShadow: 'rgba(0,0,0,0.1) 0px 4px 16px',
+    zIndex: 20,
+    padding: 4,
+    minWidth: 140,
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  exportMenuItem: {
+    background: 'none',
+    border: 'none',
+    borderRadius: 5,
+    color: 'var(--text)',
+    fontSize: 12,
+    fontFamily: 'var(--sans)',
+    padding: '7px 12px',
+    cursor: 'pointer',
+    textAlign: 'left',
+  },
+  exportMenuItemActive: {
+    background: 'var(--surface2)',
+    fontWeight: 500,
+    color: 'var(--accent)',
   },
 }

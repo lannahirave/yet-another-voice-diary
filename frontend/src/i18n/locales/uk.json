@@ -67,6 +67,9 @@
     "searchPlaceholder": "Пошук по транскрипту",
     "noUtterances": "Немає реплік",
     "selectSession": "Виберіть сесію",
+    "exportJson": "Експорт JSON",
+    "exportMd": "Експорт MD",
+    "exportCsv": "Експорт CSV",
     "tagReplies_one": "{{count}} репліка",
     "tagReplies_few": "{{count}} репліки",
     "tagReplies_many": "{{count}} реплік"

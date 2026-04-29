@@ -65,6 +65,9 @@
     "searchPlaceholder": "Search transcripts",
     "noUtterances": "No utterances",
     "selectSession": "Select a session",
+    "exportJson": "Export JSON",
+    "exportMd": "Export MD",
+    "exportCsv": "Export CSV",
     "tagReplies_one": "{{count}} reply",
     "tagReplies_other": "{{count}} replies"
   },
