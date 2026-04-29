@@ -2,11 +2,13 @@ interface ToggleProps {
   on: boolean
   onChange: (next: boolean) => void
   disabled?: boolean
+  dataTestId?: string
 }
 
-export function Toggle({ on, onChange, disabled }: ToggleProps) {
+export function Toggle({ on, onChange, disabled, dataTestId }: ToggleProps) {
   return (
     <div
+      data-testid={dataTestId}
       onClick={() => {
         if (disabled) return
         onChange(!on)

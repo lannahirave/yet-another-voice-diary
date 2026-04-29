@@ -74,6 +74,7 @@ export function AllSessions() {
           return (
             <div
               key={item.id}
+              data-testid={`session-card-${item.id}`}
               onClick={() => setSelected(item.id)}
               style={{ ...asS.card, ...(active ? asS.cardActive : {}) }}
             >
@@ -165,6 +166,7 @@ export function AllSessions() {
                 {editing === session.id ? (
                   <input
                     autoFocus
+                    data-testid="session-title-input"
                     defaultValue={titles[session.id] ?? session.title}
                     style={asS.titleInput}
                     onBlur={async (e) => {
@@ -181,6 +183,7 @@ export function AllSessions() {
                   />
                 ) : (
                   <div
+                    data-testid="session-title"
                     style={{
                       ...asS.transcriptTitle,
                       ...((titles[session.id] ?? session.title) === t('common.noTitle') ? asS.cardTitleEmpty : {}),
@@ -200,6 +203,7 @@ export function AllSessions() {
               <div style={asS.searchBox}>
                 <span style={{ color: 'var(--text-dim)', fontSize: 13 }}>⌕</span>
                 <input
+                  data-testid="transcript-search"
                   placeholder={t('allSessions.searchPlaceholder')}
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
@@ -217,6 +221,7 @@ export function AllSessions() {
                 return (
                   <div
                     key={utterance.id}
+                    data-testid={`transcript-utt-${utterance.id}`}
                     style={{
                       ...asS.uttRow,
                       background: hit ? 'rgba(245,78,0,0.05)' : 'transparent',
@@ -268,7 +273,7 @@ export function AllSessions() {
                 )
               })}
               {!utterancesQuery.isLoading && utterances.length === 0 && (
-                <div style={{ color: 'var(--text-dim)', fontSize: 13, padding: '16px 0' }}>
+                <div data-testid="no-utterances" style={{ color: 'var(--text-dim)', fontSize: 13, padding: '16px 0' }}>
                   {t('allSessions.noUtterances')}
                 </div>
               )}

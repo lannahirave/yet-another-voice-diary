@@ -98,6 +98,7 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
         <div style={uqS.searchWrap}>
           <span style={{ color: 'var(--text-dim)', fontSize: 13 }}>⌕</span>
           <input
+            data-testid="queue-search"
             placeholder={t('queue.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -113,6 +114,7 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
       <div style={uqS.filtersBar}>
         <span style={uqS.filterLabel}>{t('queue.sessionFilterLabel')}</span>
           <select
+            data-testid="queue-session-filter"
             value={sessionFilter}
             onChange={(e) => setSessionFilter(e.target.value)}
             style={uqS.filterSelect}
@@ -165,6 +167,7 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
           return (
             <div
               key={item.id}
+              data-testid={`queue-card-${item.id}`}
               style={{
                 ...uqS.card,
                 ...(idx === 0 ? uqS.cardLead : null),
@@ -210,6 +213,7 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
                   return (
                     <button
                       key={contactId}
+                      data-testid={`candidate-${contactId}`}
                       onClick={() => void resolve(item, contactId)}
                       disabled={queueBusy || skipBusy}
                       title={t('queue.similarityTitle', { percent: Math.round(score * 100) })}
@@ -291,6 +295,7 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
                   })()
                 ) : (
                   <button
+                    data-testid="pick-existing-btn"
                     onClick={() => {
                       setPickExistingId(item.id)
                       setPickExistingQuery('')
@@ -306,6 +311,7 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <input
                       autoFocus
+                      data-testid="new-contact-input"
                       placeholder={t('queue.namePlaceholder')}
                       value={newContactName}
                       onChange={(e) => setNewContactName(e.target.value)}
@@ -317,6 +323,7 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
                       }}
                     />
                     <button
+                      data-testid="save-new-contact-btn"
                       onClick={() => void handleNewContact(item, newContactName.trim())}
                       disabled={!newContactName.trim() || createContactMutation.isPending || queueBusy}
                       style={{ ...uqS.saveBtn, opacity: newContactName.trim() ? 1 : 0.4 }}
@@ -325,12 +332,12 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
                     </button>
                   </div>
                 ) : (
-                  <button onClick={() => setNewContactId(item.id)} style={uqS.newBtn}>
+                  <button data-testid="new-contact-btn" onClick={() => setNewContactId(item.id)} style={uqS.newBtn}>
                     {t('queue.newContact')}
                   </button>
                 )}
 
-                <button onClick={() => void skip(item)} style={uqS.skipBtn} disabled={queueBusy || skipBusy}>
+                <button data-testid="skip-btn" onClick={() => void skip(item)} style={uqS.skipBtn} disabled={queueBusy || skipBusy}>
                   {t('queue.skip')}
                 </button>
               </div>
@@ -340,6 +347,7 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
         {hasMore && !queueQuery.isFetching && (
           <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0' }}>
             <button
+              data-testid="load-more"
               onClick={() => setOffset((prev) => prev + PAGE_SIZE)}
               style={uqS.loadMoreBtn}
             >

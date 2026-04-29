@@ -65,7 +65,7 @@ function UtteranceRow({ utt, isLive = false, sessionId = null }: UtteranceRowPro
   }
   return (
     <>
-    <div style={{ ...csS.uttRow, padding: 'var(--utt-padding, 13px 0)' }}>
+    <div data-testid={`utterance-${utt.id}`} style={{ ...csS.uttRow, padding: 'var(--utt-padding, 13px 0)' }}>
       <Avatar contact={contact} size={28} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={csS.uttMeta}>
@@ -74,6 +74,7 @@ function UtteranceRow({ utt, isLive = false, sessionId = null }: UtteranceRowPro
           </span>
           {isUnknown && (
             <button
+              data-testid="identify-btn"
               onClick={(e) => { e.stopPropagation(); void openPicker() }}
               style={csS.identifyBtn}
               disabled={loading || pickerOpen}
@@ -111,7 +112,7 @@ function UtteranceRow({ utt, isLive = false, sessionId = null }: UtteranceRowPro
       </div>
     </div>
     {pickerOpen && (
-      <div style={csS.identifyPanel}>
+      <div data-testid="identify-panel" style={csS.identifyPanel}>
         <div style={csS.identifyPanelTitle}>{t('currentSession.identifyTitle')}</div>
         {loading ? (
           <div style={csS.identifyPicker}>
@@ -518,6 +519,7 @@ export function CurrentSession({
           {recState !== 'idle' ? (
             <span style={csS.recPill}>
               <span
+                data-testid="rec-dot"
                 className={recState === 'recording' ? 'rec-pulse' : ''}
                 style={{ ...csS.recDot, background: recState === 'recording' ? 'var(--record)' : 'var(--text-dim)' }}
               />
@@ -540,7 +542,7 @@ export function CurrentSession({
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {wsError && <span style={{ fontSize: 12, color: 'var(--record)', maxWidth: 240 }}>{wsError}</span>}
           {systemSupported && recState === 'idle' && (
-            <label style={csS.systemToggle} title={t('currentSession.captureSystemHint')}>
+            <label data-testid="system-audio-toggle" style={csS.systemToggle} title={t('currentSession.captureSystemHint')}>
               <input
                 type="checkbox"
                 checked={systemEnabled}
@@ -556,21 +558,21 @@ export function CurrentSession({
             </span>
           )}
           {recState === 'idle' && (
-            <button onClick={() => void start()} style={csS.btnPrimary}>{t('currentSession.btnStart')}</button>
+            <button onClick={() => void start()} data-testid="btn-start" style={csS.btnPrimary}>{t('currentSession.btnStart')}</button>
           )}
           {recState === 'starting' && (
             <button disabled style={{ ...csS.btnPrimary, opacity: 0.65, cursor: 'wait' }}>{t('currentSession.btnStarting')}</button>
           )}
           {recState === 'recording' && (
             <>
-              <button onClick={pause} style={csS.btnSecondary}>{t('currentSession.btnPause')}</button>
-              <button onClick={stop} style={csS.btnDanger}>{t('currentSession.btnStop')}</button>
+              <button onClick={pause} data-testid="btn-pause" style={csS.btnSecondary}>{t('currentSession.btnPause')}</button>
+              <button onClick={stop} data-testid="btn-stop" style={csS.btnDanger}>{t('currentSession.btnStop')}</button>
             </>
           )}
           {recState === 'paused' && (
             <>
-              <button onClick={resume} style={csS.btnPrimary}>{t('currentSession.btnResume')}</button>
-              <button onClick={stop} style={csS.btnDanger}>{t('currentSession.btnStop')}</button>
+              <button onClick={resume} data-testid="btn-resume" style={csS.btnPrimary}>{t('currentSession.btnResume')}</button>
+              <button onClick={stop} data-testid="btn-stop" style={csS.btnDanger}>{t('currentSession.btnStop')}</button>
             </>
           )}
         </div>
@@ -595,7 +597,7 @@ export function CurrentSession({
         </div>
 
         <div style={csS.sidePane}>
-          <div style={csS.sideBlock}>
+          <div data-testid="speaker-sidebar" style={csS.sideBlock}>
             <div style={csS.sideTitle}>{t('currentSession.speakers')}</div>
             {Object.values(speakerStats)
               .sort((a, b) => a.order - b.order)
@@ -627,12 +629,12 @@ export function CurrentSession({
           </div>
 
           {unknownInSession > 0 && (
-            <div style={{ ...csS.sideBlock, borderColor: 'rgba(207,45,86,0.25)' }}>
+            <div data-testid="unknown-speaker-section" style={{ ...csS.sideBlock, borderColor: 'rgba(207,45,86,0.25)' }}>
               <div style={csS.sideTitle}>{t('currentSession.unknownSpeakerCard')}</div>
               <div style={{ fontSize: 12, color: 'var(--record)', fontFamily: 'var(--mono)', marginBottom: 8 }}>
                 {t('currentSession.fragments', { count: unknownInSession })}
               </div>
-              <button onClick={onIdentifyUnknown} style={csS.btnIdentify}>
+              <button data-testid="identify-unknown-btn" onClick={onIdentifyUnknown} style={csS.btnIdentify}>
                 {t('currentSession.identify')}
               </button>
             </div>

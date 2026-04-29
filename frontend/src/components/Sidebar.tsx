@@ -67,6 +67,7 @@ export function Sidebar({ screen, setScreen, recording }: SidebarProps) {
                 <button
                   key={item.id}
                   onClick={() => setScreen(item.id)}
+                  data-testid={`nav-${item.id}`}
                   style={{ ...sbS.navItem, ...(active ? sbS.navItemActive : {}) }}
                 >
                   <span

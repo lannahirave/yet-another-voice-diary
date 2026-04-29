@@ -58,6 +58,7 @@ export function Search() {
           <span style={{ color: 'var(--text-dim)', fontSize: 15 }}>⌕</span>
           <input
             autoFocus
+            data-testid="search-input"
             placeholder={t('search.placeholder')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -77,6 +78,7 @@ export function Search() {
           {['UK', 'EN'].map((value) => (
             <button
               key={value}
+              data-testid={`lang-filter-${value.toLowerCase()}`}
               onClick={() => toggleLanguage(value)}
               style={{
                 ...srS.filterPill,
@@ -108,13 +110,13 @@ export function Search() {
         )}
 
         {Object.entries(grouped).map(([sessionId, { title, items }]) => (
-          <div key={sessionId} style={srS.group}>
+          <div key={sessionId} data-testid={`search-group-${sessionId}`} style={srS.group}>
             <div style={srS.groupHeader}>
               <span style={srS.groupTitle}>{title || t('common.noTitle')}</span>
               <span style={srS.groupCount}>{t('search.matches', { count: items.length })}</span>
             </div>
             {items.map((hit: ApiSearchHit) => (
-              <div key={hit.utterance_id} style={srS.resultRow}>
+              <div key={hit.utterance_id} data-testid={`search-result-${hit.utterance_id}`} style={srS.resultRow}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 3 }}>
                     <span style={{ fontSize: 10.5, color: 'var(--text-dim)', fontFamily: 'var(--mono)' }}>

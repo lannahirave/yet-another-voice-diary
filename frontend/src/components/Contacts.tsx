@@ -74,6 +74,7 @@ export function Contacts() {
           <div style={ctS.searchBox}>
             <span style={{ color: 'var(--text-dim)', fontSize: 13 }}>⌕</span>
             <input
+              data-testid="contacts-search"
               placeholder={t('contacts.searchPlaceholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -85,6 +86,7 @@ export function Contacts() {
           {filtered.map((item) => (
             <div
               key={item.id}
+              data-testid={`contact-row-${item.id}`}
               onClick={() => setSelected(item.id)}
               style={{
                 ...ctS.contactRow,
@@ -137,6 +139,7 @@ export function Contacts() {
             <div style={{ display: 'flex', gap: 6 }}>
               <input
                 autoFocus
+                data-testid="new-contact-input"
                 placeholder={t('contacts.newContactPlaceholder')}
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
@@ -146,10 +149,10 @@ export function Contacts() {
                 }}
                 style={{ ...ctS.searchInput, flex: 1, border: '1px solid var(--accent)', borderRadius: 6, padding: '6px 8px' }}
               />
-              <button onClick={() => void handleCreate()} style={ctS.newBtn}>✓</button>
+              <button data-testid="new-contact-btn" onClick={() => void handleCreate()} style={ctS.newBtn}>✓</button>
             </div>
           ) : (
-            <button onClick={() => setCreating(true)} style={ctS.newBtn}>
+            <button data-testid="create-contact-btn" onClick={() => setCreating(true)} style={ctS.newBtn}>
               {t('contacts.newContact')}
             </button>
           )}
@@ -204,6 +207,7 @@ export function Contacts() {
               </div>
             </div>
             <button
+              data-testid="delete-contact-btn"
               style={ctS.deleteBtn}
               title={t('contacts.deleteTitle')}
               onClick={() => void handleDelete(contact.id)}
@@ -222,6 +226,7 @@ export function Contacts() {
             ).map(([tabId, label]) => (
               <button
                 key={tabId}
+                data-testid={`tab-${tabId}`}
                 onClick={() => setTab(tabId as TabId)}
                 style={{ ...ctS.tab, ...(tab === tabId ? ctS.tabActive : {}) }}
               >
@@ -234,7 +239,7 @@ export function Contacts() {
             {tab === 'voiceprint' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                 {contact.confidence > 0 ? (
-                  <div style={ctS.vpCard}>
+                  <div data-testid="voiceprint-confidence-bar" style={ctS.vpCard}>
                     <div style={ctS.vpRow}>
                       <div style={ctS.vpLabel}>{t('contacts.confidenceLabel')}</div>
                       <div style={ctS.vpBarWrap}>
@@ -314,6 +319,7 @@ export function Contacts() {
 
             {tab === 'notes' && (
               <textarea
+                data-testid="notes-textarea"
                 placeholder={t('contacts.notesPlaceholder')}
                 value={notes[contact.id] ?? ''}
                 onChange={(e) =>

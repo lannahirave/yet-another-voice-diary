@@ -63,6 +63,7 @@ interface ModelCardProps {
   onLifecycle?: () => void
   progress?: number
   errorMessage?: string | null
+  kind?: string
 }
 
 const ASR_MODELS: ModelDef[] = [
@@ -154,6 +155,7 @@ function ModelCard({
   onLifecycle,
   progress,
   errorMessage,
+  kind,
 }: ModelCardProps) {
   const { t } = useTranslation()
   const buttonDisabled = disabled || selected
@@ -172,11 +174,12 @@ function ModelCard({
 
   return (
     <div
+      data-testid={kind ? `model-card-${kind}-${model.id}` : undefined}
       onClick={handleSelect}
       style={{
         ...stS.modelCard,
         ...(selected ? stS.modelCardSel : {}),
-        ...(buttonDisabled ? stS.modelCardDisabled : {}),
+        ...(disabled ? stS.modelCardDisabled : {}),
       }}
     >
       {selected && <div style={stS.modelCheck}>✓</div>}
@@ -209,6 +212,7 @@ function ModelCard({
       )}
       <div style={stS.modelActions}>
         <button
+          data-testid={kind ? `select-${kind}` : undefined}
           onClick={(e) => {
             e.stopPropagation()
             handleSelect()
@@ -224,6 +228,7 @@ function ModelCard({
         </button>
         {selected && lifecycleLabel && onLifecycle && (
           <button
+            data-testid={kind ? (state === 'LOADED' ? `unload-${kind}` : `load-${kind}`) : undefined}
             onClick={(e) => {
               e.stopPropagation()
               onLifecycle()
@@ -552,6 +557,7 @@ export function Settings() {
       return (
         <ModelCard
           key={model.id}
+          kind={kind}
           model={model}
           state={cardState}
           selected={isSelectedCard}
@@ -585,6 +591,7 @@ export function Settings() {
         {sections.map((section) => (
           <button
             key={section.id}
+            data-testid={`settings-tab-${section.id}`}
             onClick={() => setActive(section.id)}
             style={{
               ...stS.sidenavItem,
@@ -653,6 +660,7 @@ export function Settings() {
                 </div>
               </div>
               <Toggle
+                dataTestId="unload-toggle"
                 on={unloadAfterStop}
                 onChange={(next) => void commitUnloadAfterStop(next)}
                 disabled={loadingConfig || !config || savingUnload}
@@ -668,6 +676,7 @@ export function Settings() {
                 </div>
               </div>
               <Toggle
+                dataTestId="preload-toggle"
                 on={preloadOnStart}
                 onChange={(next) => void commitPreloadOnStart(next)}
                 disabled={loadingConfig || !config || savingPreload}
@@ -698,6 +707,7 @@ export function Settings() {
                   0.00
                 </span>
                 <input
+                  data-testid="threshold-slider"
                   type="range"
                   min={0}
                   max={100}
@@ -763,7 +773,7 @@ export function Settings() {
         {active === 'storage' && (
           <>
             <SectionTitle>{t('settings.storage')}</SectionTitle>
-            <div style={stS.infoBox}>
+            <div data-testid="storage-info" style={stS.infoBox}>
               {(
                 [
                   [
@@ -822,6 +832,7 @@ export function Settings() {
                   return (
                     <button
                       key={value}
+                      data-testid={`theme-toggle-${value}`}
                       onClick={() => {
                         setThemeState(value)
                         document.documentElement.setAttribute('data-theme', value)
@@ -857,6 +868,7 @@ export function Settings() {
                   return (
                     <button
                       key={code}
+                      data-testid={`lang-select-${code}`}
                       onClick={() => void i18nInstance.changeLanguage(code)}
                       style={{
                         ...stS.segBtn,
