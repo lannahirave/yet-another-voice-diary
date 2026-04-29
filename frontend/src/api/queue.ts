@@ -19,6 +19,12 @@ export const getQueueCount = () =>
 export const getQueueSessions = () =>
   apiFetch<Array<{ session_id: string; title: string; started_at: number }>>('/unknown-queue/sessions')
 
+export const deleteQueueCluster = (queueIds: string[]) =>
+  apiFetch<{ deleted_count: number }>('/unknown-queue/delete', {
+    method: 'POST',
+    body: JSON.stringify({ queue_ids: queueIds }),
+  })
+
 export const resolveQueueCluster = (queueIds: string[], contactId: string) =>
   apiFetch<ApiQueueResolveResponse>('/unknown-queue/resolve', {
     method: 'POST',

@@ -265,6 +265,22 @@ def skip_batch(
     return {"skipped_count": skipped}
 
 
+@router.post("/delete", status_code=200)
+def delete_batch(
+    payload: QueueSkipRequest, conn: sqlite3.Connection = Depends(get_db)
+):
+    if not payload.queue_ids:
+        raise HTTPException(status_code=400, detail="queue_ids required")
+    repo = QueueRepo(conn)
+    missing = [qid for qid in payload.queue_ids if not repo.get(qid)]
+    if missing:
+        raise HTTPException(
+            status_code=404, detail=f"queue items not found: {missing}"
+        )
+    deleted = repo.delete_many(payload.queue_ids)
+    return {"deleted_count": deleted}
+
+
 # ---- Per-item routes (kept for backward compatibility / single-row callers) ----
 
 

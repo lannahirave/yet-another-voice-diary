@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { adaptQueueCluster } from '../api/adapters'
-import { resolveQueueCluster, skipQueueCluster, listQueue, getQueueCount, getQueueSessions } from '../api/queue'
+import { resolveQueueCluster, skipQueueCluster, deleteQueueCluster, listQueue, getQueueCount, getQueueSessions } from '../api/queue'
 import type { UnknownQueueItem, Utterance } from '../types/domain'
 import { queryKeys } from './keys'
 
@@ -148,6 +148,39 @@ export function useSkipQueueClusterMutation() {
     },
     onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.queue.all })
+    },
+  })
+}
+
+export function useDeleteQueueClusterMutation() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ cluster }: SkipQueueVariables) => deleteQueueCluster(cluster.queueIds),
+    onMutate: async ({ cluster }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.queue.listRoot() })
+
+      const previousQueue = queryClient.getQueriesData<UnknownQueueItem[]>({
+        queryKey: queryKeys.queue.listRoot(),
+      })
+      queryClient.setQueriesData<UnknownQueueItem[]>(
+        { queryKey: queryKeys.queue.listRoot() },
+        (existing) => existing?.filter((item) => item.id !== cluster.id) ?? [],
+      )
+
+      return { previousQueue }
+    },
+    onError: (_error, _variables, context) => {
+      for (const [key, data] of context?.previousQueue ?? []) {
+        queryClient.setQueryData(key, data)
+      }
+    },
+    onSettled: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.queue.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.sessions.list() }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.sessions.utterancesRoot() }),
+      ])
     },
   })
 }

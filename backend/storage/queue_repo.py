@@ -146,6 +146,31 @@ class QueueRepo:
             for r in cur.fetchall()
         ]
 
+    def delete_many(self, queue_ids: list[str]) -> int:
+        """Hard-delete queue rows, their speaker_segments, and linked utterances."""
+        placeholders = ", ".join("?" for _ in queue_ids)
+        # Delete utterances linked to these speaker_segments
+        self.conn.execute(
+            f"DELETE FROM utterances WHERE speaker_segment_id IN ("
+            f"SELECT speaker_segment_id FROM unknown_queue WHERE id IN ({placeholders})"
+            f")",
+            queue_ids,
+        )
+        # Delete speaker_segments
+        self.conn.execute(
+            f"DELETE FROM speaker_segments WHERE id IN ("
+            f"SELECT speaker_segment_id FROM unknown_queue WHERE id IN ({placeholders})"
+            f")",
+            queue_ids,
+        )
+        # Delete queue rows
+        cur = self.conn.execute(
+            f"DELETE FROM unknown_queue WHERE id IN ({placeholders})",
+            queue_ids,
+        )
+        self.conn.commit()
+        return cur.rowcount
+
     def get(self, queue_id: str) -> Optional[dict]:
         cur = self.conn.execute(
             """

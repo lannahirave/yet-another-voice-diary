@@ -8,6 +8,7 @@ import {
   useQueueSessionsQuery,
   useResolveQueueClusterMutation,
   useSkipQueueClusterMutation,
+  useDeleteQueueClusterMutation,
 } from '../query/queue'
 import type { UnknownQueueItem } from '../types/domain'
 
@@ -42,6 +43,7 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
     onApplyLiveResolution,
   })
   const skipMutation = useSkipQueueClusterMutation()
+  const deleteMutation = useDeleteQueueClusterMutation()
 
   const [newContactId, setNewContactId] = useState<string | null>(null)
   const [newContactName, setNewContactName] = useState('')
@@ -79,6 +81,10 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
 
   const skip = async (cluster: UnknownQueueItem) => {
     await skipMutation.mutateAsync({ cluster })
+  }
+
+  const discard = async (cluster: UnknownQueueItem) => {
+    await deleteMutation.mutateAsync({ cluster })
   }
 
   const handleNewContact = async (cluster: UnknownQueueItem, name: string) => {
@@ -340,6 +346,15 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
                 <button data-testid="skip-btn" onClick={() => void skip(item)} style={uqS.skipBtn} disabled={queueBusy || skipBusy}>
                   {t('queue.skip')}
                 </button>
+                <button
+                  data-testid="delete-btn"
+                  onClick={() => void discard(item)}
+                  style={uqS.deleteBtn}
+                  disabled={queueBusy || skipBusy || deleteMutation.isPending}
+                  title="Delete permanently"
+                >
+                  🗑
+                </button>
               </div>
             </div>
           )
@@ -533,5 +548,10 @@ const uqS: Record<string, CSSProperties> = {
   skipBtn: {
     background: 'none', border: 'none', color: 'var(--text-dim)',
     fontSize: 12.5, cursor: 'pointer', padding: '5px 8px', marginLeft: 'auto',
+  },
+  deleteBtn: {
+    background: 'none', border: 'none',
+    fontSize: 14, cursor: 'pointer', padding: '5px 6px',
+    opacity: 0.5, transition: 'opacity 0.15s',
   },
 }
