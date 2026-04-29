@@ -1,18 +1,28 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AllSessions } from './AllSessions'
+
+const { mockSessions, mockUpdateSession } = vi.hoisted(() => {
+  const sessions = [
+    { id: 's1', title: '', started_at: '2026-04-29T10:00:00Z', ended_at: '2026-04-29T10:30:00Z', notes: '', language_hint: null, utterance_count: 3, speakers: [] },
+    { id: 's2', title: 'Morning check-in', started_at: '2026-04-28T14:00:00Z', ended_at: '2026-04-28T14:45:00Z', notes: '', language_hint: null, utterance_count: 5, speakers: ['c1'] },
+  ]
+  const updateFn = vi.fn(async (id: string, payload: { title?: string }) => {
+    const s = sessions.find((s) => s.id === id)
+    if (s && payload.title !== undefined) s.title = payload.title
+    return { ...s, ...payload }
+  })
+  return { mockSessions: sessions, mockUpdateSession: updateFn }
+})
 
 vi.mock('../api/sessions', async () => {
   const actual = await vi.importActual('../api/sessions')
   return {
     ...actual,
-    listSessions: vi.fn().mockResolvedValue([
-      { id: 's1', title: '', started_at: '2026-04-29T10:00:00Z', ended_at: '2026-04-29T10:30:00Z', notes: '', language_hint: null, utterance_count: 3, speakers: [] },
-      { id: 's2', title: 'Design review', started_at: '2026-04-28T14:00:00Z', ended_at: '2026-04-28T14:45:00Z', notes: '', language_hint: null, utterance_count: 5, speakers: ['c1'] },
-    ]),
-    updateSession: vi.fn().mockResolvedValue({}),
-    listUtterances: vi.fn().mockResolvedValue([]),
+    listSessions: vi.fn().mockImplementation(() => Promise.resolve([...mockSessions])),
+    updateSession: mockUpdateSession,
+    listUtterances: vi.fn(() => Promise.resolve([])),
   }
 })
 
@@ -21,14 +31,12 @@ vi.mock('../api/contacts', async () => {
   return { ...actual, listContacts: vi.fn().mockResolvedValue([]) }
 })
 
-function renderWithProviders() {
+function renderWithProviders(ui = <AllSessions />) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   return render(
-    <QueryClientProvider client={queryClient}>
-      <AllSessions />
-    </QueryClientProvider>,
+    <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
   )
 }
 
@@ -37,6 +45,11 @@ const UNTITLED = 'Без назви'
 describe('AllSessions inline rename', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockSessions.length = 0
+    mockSessions.push(
+      { id: 's1', title: '', started_at: '2026-04-29T10:00:00Z', ended_at: '2026-04-29T10:30:00Z', notes: '', language_hint: null, utterance_count: 3, speakers: [] },
+      { id: 's2', title: 'Morning check-in', started_at: '2026-04-28T14:00:00Z', ended_at: '2026-04-28T14:45:00Z', notes: '', language_hint: null, utterance_count: 5, speakers: ['c1'] },
+    )
   })
 
   async function waitForLoaded() {
@@ -54,7 +67,7 @@ describe('AllSessions inline rename', () => {
   it('titled session shows its name', async () => {
     renderWithProviders()
     await waitForLoaded()
-    expect(screen.getByText('Design review')).toBeDefined()
+    expect(screen.getByText('Morning check-in')).toBeDefined()
   })
 
   it('empty title has cursor pointer CSS (clickable)', async () => {
@@ -69,7 +82,6 @@ describe('AllSessions inline rename', () => {
   it('transcript panel title also has cursor pointer', async () => {
     renderWithProviders()
     await waitForLoaded()
-    // Second occurrence is the transcript panel title
     const panelTitle = screen.getAllByText(UNTITLED)[1]
     const parent = panelTitle.closest('[style*="cursor: pointer"]')
     expect(parent).not.toBeNull()
@@ -79,5 +91,23 @@ describe('AllSessions inline rename', () => {
     renderWithProviders()
     await waitForLoaded()
     expect(screen.getByText('2')).toBeDefined()
+  })
+
+  it('renamed title persists after remount', async () => {
+    const { unmount } = renderWithProviders()
+    await waitForLoaded()
+
+    // Simulate rename via mock mutation
+    mockSessions[0].title = 'Standup notes'
+
+    // Unmount (simulate switching tab)
+    unmount()
+    await act(() => new Promise((r) => setTimeout(r, 10)))
+
+    // Remount (simulate returning to tab)
+    renderWithProviders()
+    await waitFor(() => {
+      expect(screen.getByText('Standup notes')).toBeDefined()
+    })
   })
 })
