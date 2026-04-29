@@ -16,6 +16,7 @@ export function AllSessions() {
   const [searchText, setSearchText] = useState('')
 
   const sessions = sessionsQuery.data ?? []
+  const isLoading = sessionsQuery.isLoading
 
   useEffect(() => {
     if (sessions.length === 0) {
@@ -43,7 +44,18 @@ export function AllSessions() {
           <span style={asS.listTitle}>{t('allSessions.title')}</span>
           <span style={asS.listCount}>{sessions.length}</span>
         </div>
-        {sessions.length === 0 && (
+        {isLoading && (
+          <>
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div key={i} style={{ ...asS.card, pointerEvents: 'none' }}>
+                <div style={asS.skeletonLine} />
+                <div style={{ ...asS.skeletonLine, width: '65%' }} />
+                <div style={{ ...asS.skeletonLine, width: '40%' }} />
+              </div>
+            ))}
+          </>
+        )}
+        {!isLoading && sessions.length === 0 && (
           <div style={{ padding: '24px 18px', color: 'var(--text-dim)', fontSize: 13 }}>
             {t('allSessions.empty')}
           </div>
@@ -401,5 +413,12 @@ const asS: Record<string, CSSProperties> = {
     background: 'var(--surface2)',
     color: 'var(--accent)',
     borderRadius: 3,
+  },
+  skeletonLine: {
+    height: 10,
+    borderRadius: 4,
+    background: 'var(--surface2)',
+    marginBottom: 6,
+    animation: 'pulse 1.4s ease-in-out infinite',
   },
 }
