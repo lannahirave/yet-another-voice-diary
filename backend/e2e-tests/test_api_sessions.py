@@ -80,3 +80,56 @@ async def test_session_utterances_via_api(client: AsyncClient) -> None:
 async def test_session_not_found(client: AsyncClient) -> None:
     r = await client.get("/sessions/does-not-exist")
     assert r.status_code == 404
+
+
+async def test_session_rename(client: AsyncClient) -> None:
+    """Inline session renaming: PATCH title, verify persistence, handle empty/trim."""
+    # Create a session with an initial title
+    r = await client.post("/sessions", json={"title": "old name"})
+    assert r.status_code == 201
+    sid = r.json()["id"]
+    assert r.json()["title"] == "old name"
+
+    # Rename via PATCH
+    r = await client.patch(f"/sessions/{sid}", json={"title": "new name"})
+    assert r.status_code == 200
+    assert r.json()["title"] == "new name"
+
+    # Verify persistence via GET
+    r = await client.get(f"/sessions/{sid}")
+    assert r.status_code == 200
+    assert r.json()["title"] == "new name"
+
+    # Rename to empty string (trim → empty, the API accepts it)
+    r = await client.patch(f"/sessions/{sid}", json={"title": ""})
+    assert r.status_code == 200
+    assert r.json()["title"] == ""
+
+    # Rename back
+    r = await client.patch(f"/sessions/{sid}", json={"title": "final name"})
+    assert r.status_code == 200
+    assert r.json()["title"] == "final name"
+
+    # Cleanup
+    await client.delete(f"/sessions/{sid}")
+
+
+async def test_session_rename_nonexistent(client: AsyncClient) -> None:
+    """PATCH on non-existent session returns 404."""
+    r = await client.patch("/sessions/does-not-exist", json={"title": "nope"})
+    assert r.status_code == 404
+
+
+async def test_utterance_candidates_not_found(client: AsyncClient) -> None:
+    """GET candidates for non-existent utterance returns 404."""
+    r = await client.get("/sessions/utterances/does-not-exist/candidates")
+    assert r.status_code == 404
+
+
+async def test_utterance_identify_not_found(client: AsyncClient) -> None:
+    """POST identify for non-existent utterance returns 404."""
+    r = await client.post(
+        "/sessions/utterances/does-not-exist/identify",
+        json={"contact_id": "fake"},
+    )
+    assert r.status_code == 404

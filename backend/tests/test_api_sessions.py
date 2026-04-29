@@ -87,3 +87,35 @@ async def test_session_utterances(client):
 async def test_session_not_found(client):
     r = await client.get("/sessions/does-not-exist")
     assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_session_rename_title(client):
+    # Create
+    r = await client.post("/sessions", json={"title": "original"})
+    assert r.status_code == 201
+    sid = r.json()["id"]
+
+    # Rename
+    r = await client.patch(f"/sessions/{sid}", json={"title": "renamed"})
+    assert r.status_code == 200
+    assert r.json()["title"] == "renamed"
+
+    # Verify persistence
+    r = await client.get(f"/sessions/{sid}")
+    assert r.status_code == 200
+    assert r.json()["title"] == "renamed"
+
+    # Rename to empty
+    r = await client.patch(f"/sessions/{sid}", json={"title": ""})
+    assert r.status_code == 200
+    assert r.json()["title"] == ""
+
+    # Cleanup
+    await client.delete(f"/sessions/{sid}")
+
+
+@pytest.mark.asyncio
+async def test_session_rename_not_found(client):
+    r = await client.patch("/sessions/does-not-exist", json={"title": "nope"})
+    assert r.status_code == 404
