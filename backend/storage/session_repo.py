@@ -233,6 +233,28 @@ class SessionRepo:
         assert row is not None
         return dict(row)
 
+    # ---- inline identify helpers ----
+
+    def get_utterance(self, utterance_id: str) -> Optional[dict]:
+        cur = self.conn.execute(
+            "SELECT id, session_id, speaker_segment_id, source "
+            "FROM utterances WHERE id = ?",
+            (utterance_id,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def list_unknown_segments(self, session_id: str) -> list[dict]:
+        cur = self.conn.execute(
+            "SELECT id, session_id, contact_id, status, embedding, "
+            "diarization_model_id, sim_score, source "
+            "FROM speaker_segments "
+            "WHERE session_id = ? AND status = 'unknown' "
+            "AND embedding IS NOT NULL",
+            (session_id,),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
     # ---- helpers ----
 
     @staticmethod

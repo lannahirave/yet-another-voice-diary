@@ -208,3 +208,26 @@ class ModelDownloadEvent(BaseModel):
     progress: float
     state: str
     message: str = ""
+
+
+# ---------- Inline utterance identification ----------
+
+class UtteranceCandidateOut(BaseModel):
+    contact_id: str
+    contact_name: str
+    score: float
+
+
+class UtteranceCandidatesOut(BaseModel):
+    candidates: list[UtteranceCandidateOut]
+    source: str = "mic"
+    has_embedding: bool = False
+
+
+class UtteranceIdentifyRequest(BaseModel):
+    contact_id: str
+
+
+class UtteranceIdentifyResponse(BaseModel):
+    updated_count: int = 1
+    cascaded_count: int = 0

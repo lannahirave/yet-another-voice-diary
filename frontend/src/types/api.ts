@@ -117,3 +117,20 @@ export interface ApiModelProgressEvent {
   state: string
   message: string
 }
+
+export interface ApiUtteranceCandidate {
+  contact_id: string
+  contact_name: string
+  score: number
+}
+
+export interface ApiUtteranceCandidates {
+  candidates: ApiUtteranceCandidate[]
+  source: string
+  has_embedding: boolean
+}
+
+export interface ApiUtteranceIdentifyResponse {
+  updated_count: number
+  cascaded_count: number
+}

@@ -13,20 +13,58 @@ import type { Utterance } from '../types/domain'
 import { fmt } from '../utils/format'
 import { Avatar } from './shared/Avatar'
 import { AudioLevelFooter } from './shared/AudioLevelFooter'
+import { getUtteranceCandidates } from '../api/sessions'
+import { useIdentifyUtteranceMutation } from '../query/sessions'
 
 type RecState = 'idle' | 'starting' | 'recording' | 'paused'
 
 interface UtteranceRowProps {
   utt: Utterance
   isLive?: boolean
+  sessionId?: string | null
 }
 
-function UtteranceRow({ utt, isLive = false }: UtteranceRowProps) {
+function UtteranceRow({ utt, isLive = false, sessionId = null }: UtteranceRowProps) {
   const { t } = useTranslation()
   const { contactById } = useContactsData()
   const contact = contactById(utt.speakerId)
   const sourceLabel = utt.source === 'system' ? 'SYS' : utt.source === 'mic' ? 'MIC' : null
+  const isUnknown = !contact && !!utt.speakerSegmentId && !isLive
+
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [candidates, setCandidates] = useState<{ contactId: string; contactName: string; score: number }[]>([])
+  const [hasEmbedding, setHasEmbedding] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const identifyMutation = useIdentifyUtteranceMutation(sessionId ?? null)
+
+  const openPicker = async () => {
+    if (!utt.id || utt.id === 'live') return
+    setPickerOpen(true)
+    setLoading(true)
+    setCandidates([])
+    try {
+      const result = await getUtteranceCandidates(utt.id)
+      setCandidates(result.candidates.map((c) => ({
+        contactId: c.contact_id,
+        contactName: c.contact_name,
+        score: c.score,
+      })))
+      setHasEmbedding(result.has_embedding)
+    } catch {
+      setCandidates([])
+      setHasEmbedding(false)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleIdentify = async (contactId: string) => {
+    if (!utt.id || utt.id === 'live') return
+    setPickerOpen(false)
+    await identifyMutation.mutateAsync({ utteranceId: utt.id, contactId })
+  }
   return (
+    <>
     <div style={{ ...csS.uttRow, padding: 'var(--utt-padding, 13px 0)' }}>
       <Avatar contact={contact} size={28} />
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -34,6 +72,15 @@ function UtteranceRow({ utt, isLive = false }: UtteranceRowProps) {
           <span style={{ ...csS.uttName, color: contact ? contact.color : 'var(--text-muted)', fontStyle: contact ? 'normal' : 'italic' }}>
             {contact ? contact.name : t('common.unknown')}
           </span>
+          {isUnknown && (
+            <button
+              onClick={(e) => { e.stopPropagation(); void openPicker() }}
+              style={csS.identifyBtn}
+              disabled={loading || pickerOpen}
+            >
+              {pickerOpen ? '…' : t('currentSession.identifyTitle')}
+            </button>
+          )}
           <span style={csS.uttTime}>{utt.time}</span>
           {sourceLabel && (
             <span
@@ -63,6 +110,54 @@ function UtteranceRow({ utt, isLive = false }: UtteranceRowProps) {
         </div>
       </div>
     </div>
+    {pickerOpen && (
+      <div style={csS.identifyPanel}>
+        <div style={csS.identifyPanelTitle}>{t('currentSession.identifyTitle')}</div>
+        {loading ? (
+          <div style={csS.identifyPicker}>
+            {[0, 1].map((i) => (
+              <div key={i} style={csS.identifySkeleton} />
+            ))}
+          </div>
+        ) : (
+          <>
+            <div style={csS.identifyPicker}>
+              {candidates.map((c) => (
+                <button
+                  key={c.contactId}
+                  onClick={() => void handleIdentify(c.contactId)}
+                  style={csS.identifyCandidateBtn}
+                >
+                  <span style={{ fontWeight: 500 }}>{c.contactName}</span>
+                  <span style={{ color: 'var(--text-dim)', fontSize: 11, fontFamily: 'var(--mono)' }}>
+                    {Math.round(c.score * 100)}%
+                  </span>
+                </button>
+              ))}
+              {!hasEmbedding && (
+                <div style={{ fontSize: 11, color: 'var(--text-dim)', padding: '6px 0' }}>
+                  {t('currentSession.identifyNoEmbedding')}
+                </div>
+              )}
+              {candidates.length === 0 && hasEmbedding && (
+                <div style={{ fontSize: 12, color: 'var(--text-dim)', padding: '6px 0' }}>
+                  {t('currentSession.identifyNoCandidates')}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => {
+                setPickerOpen(false)
+              }}
+              style={csS.identifyCancelBtn}
+            >
+              ✕
+            </button>
+          </>
+        )}
+      </div>
+    )}
+    </>
   )
 }
 
@@ -116,6 +211,7 @@ export function CurrentSession({
   const { contactById } = useContactsData()
   const [recState, setRecState] = useState<RecState>('idle')
   const [elapsed, setElapsed] = useState(0)
+  const [sessionId, setSessionId] = useState<string | null>(null)
   const [showLive, setShowLive] = useState(false)
   const [wsError, setWsError] = useState<string | null>(null)
   const [micLevel, setMicLevel] = useState<AudioLevelSnapshot>(SILENCE_SNAPSHOT)
@@ -269,6 +365,7 @@ export function CurrentSession({
     try {
       setUtterances(() => [])
       const session = await createSession('', undefined)
+      setSessionId(session.id)
       onSessionIdChange?.(session.id)
       const ws = new AudioWebSocket()
       wsRef.current = ws
@@ -488,7 +585,7 @@ export function CurrentSession({
               <div style={csS.emptySub}>{t('currentSession.emptySub')}</div>
             </div>
           )}
-          {utterances.map((u) => <UtteranceRow key={u.id} utt={u} />)}
+          {utterances.map((u) => <UtteranceRow key={u.id} utt={u} sessionId={sessionId} />)}
           {showLive && (
             <UtteranceRow
               utt={{ id: 'live', speakerId: null, time: fmt(elapsed), text: '' }}
@@ -620,4 +717,36 @@ const csS: Record<string, CSSProperties> = {
   emptyTitle: { fontSize: 15, fontWeight: 600, color: 'var(--text-muted)' },
   emptySub: { fontSize: 13, color: 'var(--text-dim)' },
   bottombar: { minHeight: 64, borderTop: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', alignItems: 'center', padding: '10px 24px', flexShrink: 0 },
+  identifyBtn: {
+    fontSize: 10, color: 'var(--accent)', fontFamily: 'var(--mono)',
+    fontWeight: 500, background: 'none', border: '1px solid rgba(245,78,0,0.3)',
+    borderRadius: 4, padding: '1px 7px', cursor: 'pointer', letterSpacing: '0.04em',
+  },
+  identifyPanel: {
+    marginTop: 4, marginBottom: 8, padding: '10px 12px',
+    background: 'var(--surface)', border: '1px solid var(--border)',
+    borderRadius: 8, position: 'relative',
+  },
+  identifyPanelTitle: {
+    fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+    fontFamily: 'var(--mono)', textTransform: 'uppercase',
+    letterSpacing: '0.08em', marginBottom: 8,
+  },
+  identifyPicker: { display: 'flex', flexWrap: 'wrap', gap: 6 },
+  identifyCandidateBtn: {
+    display: 'flex', alignItems: 'center', gap: 6,
+    background: 'var(--bg)', border: '1px solid var(--border)',
+    borderRadius: 6, padding: '5px 10px', cursor: 'pointer',
+    fontSize: 12, color: 'var(--text)', fontFamily: 'var(--sans)',
+  },
+  identifySkeleton: {
+    width: 100, height: 28, borderRadius: 6,
+    background: 'var(--surface2)', opacity: 0.6,
+    animation: 'pulse 1.2s ease-in-out infinite',
+  },
+  identifyCancelBtn: {
+    position: 'absolute', top: 6, right: 8,
+    background: 'none', border: 'none', color: 'var(--text-dim)',
+    fontSize: 12, cursor: 'pointer', padding: 2,
+  },
 }

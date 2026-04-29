@@ -1,6 +1,10 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { adaptSession, adaptUtterance } from '../api/adapters'
-import { listSessions, listUtterances } from '../api/sessions'
+import {
+  identifyUtterance,
+  listSessions,
+  listUtterances,
+} from '../api/sessions'
 import type { ApiUtterance } from '../types/api'
 import type { Utterance } from '../types/domain'
 import { queryKeys } from './keys'
@@ -21,5 +25,29 @@ export function useSessionUtterancesQuery(sessionId: string | null) {
     queryFn: () => listUtterances(sessionId as string),
     enabled: !!sessionId,
     select: (utterances) => utterances.map(adaptUtterance),
+  })
+}
+
+export function useIdentifyUtteranceMutation(sessionId: string | null) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({
+      utteranceId,
+      contactId,
+    }: {
+      utteranceId: string
+      contactId: string
+    }) => identifyUtterance(utteranceId, contactId),
+    onSuccess: async () => {
+      if (sessionId) {
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.sessions.utterances(sessionId),
+        })
+      }
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.contacts.list(),
+      })
+    },
   })
 }
