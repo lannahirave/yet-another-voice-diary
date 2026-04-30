@@ -262,14 +262,7 @@ class PyAnnoteDiarizationProvider:
                 _pyannote_checkpoint_load_compat(model_name),
                 _suppress_unused_pyannote_torchcodec_warning(),
             ):
-                resolved_device = self._resolve_device()
-                if resolved_device == "cuda" or resolved_device == "mps":
-                    import torch
-                    self._model = Pipeline.from_pretrained(
-                        model_name, device=torch.device(resolved_device)
-                    )
-                else:
-                    self._model = Pipeline.from_pretrained(model_name)
+                self._model = Pipeline.from_pretrained(model_name)
         except Exception as exc:
             self._error = (
                 f"failed to load diarization model {model_name}: {exc}"
@@ -277,6 +270,11 @@ class PyAnnoteDiarizationProvider:
             self._state = "ERROR"
             log.exception("PyAnnote diarization model load failed")
             raise RuntimeError(self._error) from exc
+
+        resolved_device = self._resolve_device()
+        if resolved_device != "cpu":
+            import torch
+            self._model = self._model.to(torch.device(resolved_device))
 
         self._state = "LOADED"
 
