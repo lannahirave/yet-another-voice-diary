@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { App } from './App'
+import { ToastProvider } from './components/Toast/ToastProvider'
 import { queryClient } from './query/client'
 import './styles/tokens.css'
 import './styles/global.css'
@@ -13,7 +14,9 @@ if (!root) throw new Error('#root element not found in index.html')
 ReactDOM.createRoot(root).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <ToastProvider>
+        <App />
+      </ToastProvider>
     </QueryClientProvider>
   </React.StrictMode>,
 )

@@ -16,6 +16,7 @@ import { Avatar } from './shared/Avatar'
 import { AudioLevelFooterLive } from './shared/AudioLevelFooter'
 import { getUtteranceCandidates } from '../api/sessions'
 import { useIdentifyUtteranceMutation } from '../query/sessions'
+import { useToast } from './Toast/useToast'
 
 type RecState = 'idle' | 'starting' | 'recording' | 'paused'
 
@@ -223,7 +224,7 @@ export function CurrentSession({
   const [elapsed, setElapsed] = useState(0)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [showLive, setShowLive] = useState(false)
-  const [wsError, setWsError] = useState<string | null>(null)
+  const { addToast } = useToast()
   const micLevelRef = useRef<AudioLevelSnapshot>(SILENCE_SNAPSHOT)
   const sysLevelRef = useRef<AudioLevelSnapshot>(SILENCE_SNAPSHOT)
   const transcriptRef = useRef<HTMLDivElement | null>(null)
@@ -373,7 +374,11 @@ export function CurrentSession({
         },
       ])
     })
-    sysWs.on('error', (err) => setWsError(recordingErrorMessage(err, t)))
+    sysWs.on('error', (err) => addToast({
+      type: 'error',
+      title: 'System Audio Error',
+      message: recordingErrorMessage(err, t),
+    }))
     await sysWs.connect(sessionId)
 
     const ctx = new AudioContext({ sampleRate: 16000 })
@@ -396,7 +401,6 @@ export function CurrentSession({
   const start = async () => {
     if (recState !== 'idle') return
 
-    setWsError(null)
     setRecState('starting')
     setRecording(false)
     setShowLive(false)
@@ -438,7 +442,11 @@ export function CurrentSession({
         ])
       })
 
-      ws.on('error', (err) => setWsError(recordingErrorMessage(err, t)))
+      ws.on('error', (err) => addToast({
+        type: 'error',
+        title: 'Pipeline Error',
+        message: recordingErrorMessage(err, t),
+      }))
 
       const streamPromise = navigator.mediaDevices?.getUserMedia({
         audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true },
@@ -482,7 +490,7 @@ export function CurrentSession({
             sysErr instanceof SystemAudioUnavailableError
               ? sysErr.message
               : recordingErrorMessage(sysErr, t)
-          setWsError(msg)
+          addToast({ type: 'error', title: 'System Audio Error', message: msg })
         }
       }
 
@@ -499,7 +507,7 @@ export function CurrentSession({
       setRecording(false)
       setShowLive(false)
       onSessionIdChange?.(null)
-      setWsError(recordingErrorMessage(err, t))
+      addToast({ type: 'error', title: 'Recording Error', message: recordingErrorMessage(err, t) })
     }
   }
 
@@ -581,7 +589,6 @@ export function CurrentSession({
           )}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {wsError && <span style={{ fontSize: 12, color: 'var(--record)', maxWidth: 240 }}>{wsError}</span>}
           {systemSupported && recState === 'idle' && (
             <label data-testid="system-audio-toggle" style={csS.systemToggle} title={t('currentSession.captureSystemHint')}>
               <input

@@ -175,10 +175,19 @@ async def stream(ws: WebSocket) -> None:
 
     def on_seg(s: SpeakerSegment) -> None:
         s.diarization_model_id = ws.app.state.config.providers.diarization_model_id
-        resolver.resolve(
-            s,
-            threshold=ws.app.state.config.pipeline.speaker_identification_threshold,
-        )
+        try:
+            resolver.resolve(
+                s,
+                threshold=ws.app.state.config.pipeline.speaker_identification_threshold,
+            )
+        except Exception as exc:
+            log.exception("resolver failed; segment remains unknown")
+            queue.put_nowait({
+                "type": "error",
+                "code": "RESOLVER_FAILURE",
+                "component": "resolver",
+                "message": str(exc),
+            })
         session_repo.create_speaker_segment(s)
         if not s.contact_id:
             queue_repo.enqueue(s.id)
@@ -205,28 +214,35 @@ async def stream(ws: WebSocket) -> None:
             source=data.get("source", "mic"),
             speaker_segments=data.get("speaker_segments", []),
         )
-        # Attach embedding to each segment in debug data
-        for seg in data.get("speaker_segments", []):
-            emb = seg.get("embedding")
-            if emb is not None:
-                from numpy import array
-                seg["embedding"] = array(emb, dtype=np.float32)
 
     def _on_debug_vad(data: dict) -> None:
         if debug is not None:
             debug.log_vad(data["ms"], data["is_speech"])
 
-    def _on_error_debug(exc: Exception) -> None:
+    def _on_error_debug(exc: dict) -> None:
         if debug is not None:
-            debug.log_error(0, str(exc))
+            debug.log_error(exc.get("ms", 0), exc.get("message", str(exc)))
 
-    coord.on("debug:audio", _on_debug_audio)
-    coord.on("debug:vad", _on_debug_vad)
-    coord.on("error", _on_error_debug)
+    def _on_error_client(err: dict) -> None:
+        queue.put_nowait({"type": "error", **err})
+        if session is not None and session.id:
+            try:
+                session_repo.create_error(
+                    session_id=session.id,
+                    component=err.get("component", "unknown"),
+                    error_code=err.get("code", "UNKNOWN"),
+                    message=err.get("message", ""),
+                    occurred_at_ms=err.get("ms", 0),
+                )
+            except Exception:
+                pass  # DB write failure should not cascade
+
+    coord.on("error", _on_error_client)
 
     session: RecordingSession | None = None
     sender_task: asyncio.Task | None = None
     debug: DebugSession | None = None
+    debug_hooks_attached = False
     dev_audio_chunks: list[np.ndarray] = []
     _dev_audio_total_samples = 0
     _DEV_AUDIO_MAX_SAMPLES = 16000 * 300  # cap at 5 minutes per track
@@ -284,6 +300,11 @@ async def stream(ws: WebSocket) -> None:
                         }
                         debug = start_debug_session(sid, config_snapshot)
                         if debug:
+                            if not debug_hooks_attached:
+                                coord.on("debug:audio", _on_debug_audio)
+                                coord.on("debug:vad", _on_debug_vad)
+                                coord.on("error", _on_error_debug)
+                                debug_hooks_attached = True
                             log.info("SUPER DEBUG: capturing session %s to %s", sid, debug.output_dir)
                     await ws.send_json({"type": "started", "session_id": sid})
                 elif ptype == "stop":
@@ -344,9 +365,11 @@ async def stream(ws: WebSocket) -> None:
                 log.exception("provider unload-after-stop failed")
         coord.off("utterance", on_utt)
         coord.off("speaker_segment", on_seg)
-        coord.off("debug:audio", _on_debug_audio)
-        coord.off("debug:vad", _on_debug_vad)
-        coord.off("error", _on_error_debug)
+        coord.off("error", _on_error_client)
+        if debug_hooks_attached:
+            coord.off("debug:audio", _on_debug_audio)
+            coord.off("debug:vad", _on_debug_vad)
+            coord.off("error", _on_error_debug)
         if db_conn is not None:
             db_conn.close()
         if sender_task is not None:

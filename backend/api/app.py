@@ -17,6 +17,7 @@ from ..providers.embedding import ECAPATDNNEmbeddingProvider
 from ..storage.database import Database
 from ..storage.fts_migration import register_fts_migration
 from ..storage.migrations import MigrationRunner
+from ..storage.pipeline_errors_migration import register_pipeline_errors_migration
 from ..storage.speaker_segment_diarization_model_migration import (
     register_speaker_segment_diarization_model_migration,
 )
@@ -80,6 +81,7 @@ def create_app(config: Optional[BackendConfig] = None) -> FastAPI:
     register_source_migration(runner)
     register_voice_profile_metadata_migration(runner)
     register_speaker_segment_diarization_model_migration(runner)
+    register_pipeline_errors_migration(runner)
     runner.apply_pending()
     db.close()
 

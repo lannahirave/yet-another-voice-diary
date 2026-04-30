@@ -75,6 +75,19 @@ CREATE TABLE IF NOT EXISTS unknown_queue (
     FOREIGN KEY (resolved_contact_id) REFERENCES contacts(id)
 );
 
+-- Pipeline processing errors (per-session diagnostics)
+CREATE TABLE IF NOT EXISTS pipeline_errors (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    utterance_id TEXT,
+    component TEXT NOT NULL,
+    error_code TEXT NOT NULL,
+    message TEXT NOT NULL,
+    occurred_at_ms INTEGER NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+
 -- Full-text search index for utterances
 CREATE VIRTUAL TABLE IF NOT EXISTS utterances_fts USING fts5(
     transcript,

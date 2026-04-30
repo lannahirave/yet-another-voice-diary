@@ -89,19 +89,23 @@ class PipelineCoordinator:
         except ValueError:
             return False
 
+    def has_listeners(self, event: str) -> bool:
+        """Return True when at least one callback is attached for ``event``."""
+        return bool(self._callbacks.get(event))
+
     def _emit(self, event: str, data: Any):
         """Emit event to all registered callbacks."""
         for callback in self._callbacks.get(event, []):
             try:
                 if asyncio.iscoroutinefunction(callback):
                     task = asyncio.create_task(callback(data))
-                    # Store reference to prevent garbage collection
                     self._pending_tasks.add(task)
                     task.add_done_callback(self._pending_tasks.discard)
                 else:
                     callback(data)
             except Exception as e:
-                self._emit("error", e)
+                if event != "error":
+                    self._emit("error", {"code": "CALLBACK_FAILURE", "message": str(e)})
 
     def start_session(self, session: RecordingSession):
         """Start a new recording session."""
@@ -223,7 +227,7 @@ class PipelineCoordinator:
         session_id: str,
     ) -> tuple[
         tuple[Utterance, list[SpeakerSegment], Optional[SpeakerSegment]],
-        list[Exception],
+        list[dict[str, Any]],
     ]:
         """Run ASR + diarization + embedding synchronously.  Thread-safe — no
         callbacks are emitted from this method; errors are collected and
@@ -231,8 +235,13 @@ class PipelineCoordinator:
 
         ``session_id`` is snapshot by the caller on the event loop so
         we never read ``self._current_session`` from a worker thread."""
-        errors: list[Exception] = []
-        utterance = self.asr.transcribe(audio, language_hint)
+        errors: list[dict[str, Any]] = []
+        try:
+            utterance = self.asr.transcribe(audio, language_hint)
+        except Exception as exc:
+            log.exception("ASR inference failed; returning empty utterance")
+            errors.append({"code": "ASR_FAILURE", "component": "asr", "message": str(exc)})
+            utterance = Utterance(transcript="", language=language_hint, confidence=0.0)
         if not utterance.transcript.strip():
             return (utterance, [], None), errors
 
@@ -241,7 +250,7 @@ class PipelineCoordinator:
             diarized_segments = self.diarization.segment(audio)
         except Exception as exc:
             log.exception("diarization failed; continuing with full-utterance embedding")
-            errors.append(exc)
+            errors.append({"code": "DIARIZATION_FAILURE", "component": "diarization", "message": str(exc)})
 
         speaker_groups = self._speaker_groups(audio, sample_rate, diarized_segments)
 
@@ -251,7 +260,7 @@ class PipelineCoordinator:
                 embedding = self.embedding.embed(speaker_audio)
             except Exception as exc:
                 log.exception("embedding failed for speaker group; skipping segment")
-                errors.append(exc)
+                errors.append({"code": "EMBEDDING_FAILURE", "component": "embedding", "message": str(exc)})
                 continue
             built_segments.append(
                 (
@@ -313,35 +322,37 @@ class PipelineCoordinator:
                 self._current_session.id,
             )
         )
-        for exc in errors:
-            self._emit("error", exc)
+        for err_data in errors:
+            err_data["ms"] = self._buffer_started_ms or 0
+            self._emit("error", err_data)
         if not utterance.transcript.strip():
             self._reset_buffer()
             return
         self._attach_and_emit(utterance, speaker_segments, primary_segment)
-        self._emit(
-            "debug:audio",
-            {
-                "audio": audio.copy(),
-                "started_ms": self._buffer_started_ms or 0,
-                "ended_ms": self._buffer_ended_ms,
-                "sample_rate": self._buffer_sample_rate or 16000,
-                "transcript": utterance.transcript,
-                "language": utterance.language,
-                "confidence": utterance.confidence,
-                "source": self.source,
-                "speaker_segments": [
-                    {
-                        "id": seg.id,
-                        "speaker": getattr(seg, "speaker", ""),
-                        "contact_id": seg.contact_id,
-                        "diarization_model_id": getattr(seg, "diarization_model_id", ""),
-                        "embedding": seg.embedding.copy() if seg.embedding is not None else None,
-                    }
-                    for seg in speaker_segments
-                ],
-            },
-        )
+        if self.has_listeners("debug:audio"):
+            self._emit(
+                "debug:audio",
+                {
+                    "audio": audio.copy(),
+                    "started_ms": self._buffer_started_ms or 0,
+                    "ended_ms": self._buffer_ended_ms,
+                    "sample_rate": self._buffer_sample_rate or 16000,
+                    "transcript": utterance.transcript,
+                    "language": utterance.language,
+                    "confidence": utterance.confidence,
+                    "source": self.source,
+                    "speaker_segments": [
+                        {
+                            "id": seg.id,
+                            "speaker": getattr(seg, "speaker", ""),
+                            "contact_id": seg.contact_id,
+                            "diarization_model_id": getattr(seg, "diarization_model_id", ""),
+                            "embedding": seg.embedding.copy() if seg.embedding is not None else None,
+                        }
+                        for seg in speaker_segments
+                    ],
+                },
+            )
         self._reset_buffer()
 
     def _flush_buffered_utterance_sync(self) -> None:
@@ -362,35 +373,37 @@ class PipelineCoordinator:
                 self._current_session.id,
             )
         )
-        for exc in errors:
-            self._emit("error", exc)
+        for err_data in errors:
+            err_data["ms"] = self._buffer_started_ms or 0
+            self._emit("error", err_data)
         if not utterance.transcript.strip():
             self._reset_buffer()
             return
         self._attach_and_emit(utterance, speaker_segments, primary_segment)
-        self._emit(
-            "debug:audio",
-            {
-                "audio": audio.copy(),
-                "started_ms": self._buffer_started_ms or 0,
-                "ended_ms": self._buffer_ended_ms,
-                "sample_rate": self._buffer_sample_rate or 16000,
-                "transcript": utterance.transcript,
-                "language": utterance.language,
-                "confidence": utterance.confidence,
-                "source": self.source,
-                "speaker_segments": [
-                    {
-                        "id": seg.id,
-                        "speaker": getattr(seg, "speaker", ""),
-                        "contact_id": seg.contact_id,
-                        "diarization_model_id": getattr(seg, "diarization_model_id", ""),
-                        "embedding": seg.embedding.copy() if seg.embedding is not None else None,
-                    }
-                    for seg in speaker_segments
-                ],
-            },
-        )
+        if self.has_listeners("debug:audio"):
+            self._emit(
+                "debug:audio",
+                {
+                    "audio": audio.copy(),
+                    "started_ms": self._buffer_started_ms or 0,
+                    "ended_ms": self._buffer_ended_ms,
+                    "sample_rate": self._buffer_sample_rate or 16000,
+                    "transcript": utterance.transcript,
+                    "language": utterance.language,
+                    "confidence": utterance.confidence,
+                    "source": self.source,
+                    "speaker_segments": [
+                        {
+                            "id": seg.id,
+                            "speaker": getattr(seg, "speaker", ""),
+                            "contact_id": seg.contact_id,
+                            "diarization_model_id": getattr(seg, "diarization_model_id", ""),
+                            "embedding": seg.embedding.copy() if seg.embedding is not None else None,
+                        }
+                        for seg in speaker_segments
+                    ],
+                },
+            )
         self._reset_buffer()
 
     # ---- session lifecycle & streaming ---------------------------------

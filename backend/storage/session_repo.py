@@ -257,6 +257,33 @@ class SessionRepo:
 
     # ---- helpers ----
 
+    def create_error(
+        self,
+        session_id: str,
+        component: str,
+        error_code: str,
+        message: str,
+        occurred_at_ms: int,
+        utterance_id: str | None = None,
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO pipeline_errors
+                (id, session_id, utterance_id, component, error_code, message, occurred_at_ms)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(uuid.uuid4()),
+                session_id,
+                utterance_id,
+                component,
+                error_code,
+                message,
+                occurred_at_ms,
+            ),
+        )
+        self.conn.commit()
+
     @staticmethod
     def _row_to_dict(row: sqlite3.Row) -> dict:
         speaker_ids_raw = row["speaker_ids"]
