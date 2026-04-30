@@ -13,10 +13,14 @@ from ..providers.diarization import DiarizationSegment
 from .vad import VADProcessor
 
 # Dedicated thread pool for ML inference — keeps heavy model calls (ASR,
-# diarization, embedding, VAD) from competing with HTTP handler threads in
+# diarization, embedding) from competing with HTTP handler threads in
 # FastAPI's default pool, and keeps the event loop responsive during
 # transcription.
-_inference_pool = ThreadPoolExecutor(max_workers=2)
+#
+# max_workers=1 serialises all inference across connections, which also
+# avoids thread-safety issues with shared provider singletons (CTranslate2,
+# SpeechBrain, PyAnnote are not designed for concurrent calls).
+_inference_pool = ThreadPoolExecutor(max_workers=1)
 
 
 log = logging.getLogger(__name__)
@@ -56,6 +60,8 @@ class PipelineCoordinator:
             "utterance": [],
             "speaker_segment": [],
             "error": [],
+            "debug:audio": [],
+            "debug:vad": [],
         }
         self._pending_tasks: set[asyncio.Task] = set()  # type: ignore
         self._session_elapsed_ms = 0
@@ -214,13 +220,17 @@ class PipelineCoordinator:
         audio: np.ndarray,
         language_hint: str | None,
         sample_rate: int,
+        session_id: str,
     ) -> tuple[
         tuple[Utterance, list[SpeakerSegment], Optional[SpeakerSegment]],
         list[Exception],
     ]:
         """Run ASR + diarization + embedding synchronously.  Thread-safe — no
         callbacks are emitted from this method; errors are collected and
-        returned so callers can emit them on the event loop afterwards."""
+        returned so callers can emit them on the event loop afterwards.
+
+        ``session_id`` is snapshot by the caller on the event loop so
+        we never read ``self._current_session`` from a worker thread."""
         errors: list[Exception] = []
         utterance = self.asr.transcribe(audio, language_hint)
         if not utterance.transcript.strip():
@@ -234,7 +244,6 @@ class PipelineCoordinator:
             errors.append(exc)
 
         speaker_groups = self._speaker_groups(audio, sample_rate, diarized_segments)
-        session_id = self._current_session.id if self._current_session else ""
 
         built_segments: list[tuple[SpeakerSegment, int]] = []
         for _speaker, speaker_audio, sample_count in speaker_groups:
@@ -293,12 +302,15 @@ class PipelineCoordinator:
 
         audio = np.concatenate(self._buffered_audio)
         sample_rate = self._buffer_sample_rate or 16000
+        loop = asyncio.get_running_loop()
         (utterance, speaker_segments, primary_segment), errors = (
-            await asyncio.to_thread(
+            await loop.run_in_executor(
+                _inference_pool,
                 self._infer_utterance,
                 audio,
                 self._current_session.language_hint,
                 sample_rate,
+                self._current_session.id,
             )
         )
         for exc in errors:
@@ -307,6 +319,29 @@ class PipelineCoordinator:
             self._reset_buffer()
             return
         self._attach_and_emit(utterance, speaker_segments, primary_segment)
+        self._emit(
+            "debug:audio",
+            {
+                "audio": audio.copy(),
+                "started_ms": self._buffer_started_ms or 0,
+                "ended_ms": self._buffer_ended_ms,
+                "sample_rate": self._buffer_sample_rate or 16000,
+                "transcript": utterance.transcript,
+                "language": utterance.language,
+                "confidence": utterance.confidence,
+                "source": self.source,
+                "speaker_segments": [
+                    {
+                        "id": seg.id,
+                        "speaker": getattr(seg, "speaker", ""),
+                        "contact_id": seg.contact_id,
+                        "diarization_model_id": getattr(seg, "diarization_model_id", ""),
+                        "embedding": seg.embedding.copy() if seg.embedding is not None else None,
+                    }
+                    for seg in speaker_segments
+                ],
+            },
+        )
         self._reset_buffer()
 
     def _flush_buffered_utterance_sync(self) -> None:
@@ -324,6 +359,7 @@ class PipelineCoordinator:
                 audio,
                 self._current_session.language_hint,
                 sample_rate,
+                self._current_session.id,
             )
         )
         for exc in errors:
@@ -332,6 +368,29 @@ class PipelineCoordinator:
             self._reset_buffer()
             return
         self._attach_and_emit(utterance, speaker_segments, primary_segment)
+        self._emit(
+            "debug:audio",
+            {
+                "audio": audio.copy(),
+                "started_ms": self._buffer_started_ms or 0,
+                "ended_ms": self._buffer_ended_ms,
+                "sample_rate": self._buffer_sample_rate or 16000,
+                "transcript": utterance.transcript,
+                "language": utterance.language,
+                "confidence": utterance.confidence,
+                "source": self.source,
+                "speaker_segments": [
+                    {
+                        "id": seg.id,
+                        "speaker": getattr(seg, "speaker", ""),
+                        "contact_id": seg.contact_id,
+                        "diarization_model_id": getattr(seg, "diarization_model_id", ""),
+                        "embedding": seg.embedding.copy() if seg.embedding is not None else None,
+                    }
+                    for seg in speaker_segments
+                ],
+            },
+        )
         self._reset_buffer()
 
     # ---- session lifecycle & streaming ---------------------------------
@@ -373,6 +432,11 @@ class PipelineCoordinator:
 
         was_in_speech = self._in_speech
         is_speech_now = vad_segment.is_speech
+
+        self._emit(
+            "debug:vad",
+            {"ms": started_ms, "is_speech": is_speech_now},
+        )
 
         # Buffer audio that is part of a speech span, including the
         # falling-edge chunk so Silero's trailing speech-pad is preserved.

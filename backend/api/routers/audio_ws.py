@@ -28,6 +28,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from ...identification.resolver import SpeakerResolver, SQLiteResolverStore
 from ...models import RecordingSession, SpeakerSegment, Utterance
 from ...pipeline.coordinator import PipelineCoordinator
+from ..diagnostics import DebugSession, start_debug_session
 from ...pipeline.vad import VADProcessor
 from ...storage.queue_repo import QueueRepo
 from ...storage.session_repo import SessionRepo
@@ -153,13 +154,14 @@ async def stream(ws: WebSocket) -> None:
     else:
         coord = _build_coordinator(ws.app.state, source=track)
     queue: asyncio.Queue[dict] = asyncio.Queue()
+    db_conn: sqlite3.Connection | None = None
     db_conn = sqlite3.connect(str(ws.app.state.config.database.path))
     db_conn.row_factory = sqlite3.Row
     db_conn.execute("PRAGMA foreign_keys = ON")
     try:
         db_conn.execute("PRAGMA journal_mode=WAL")
-    except Exception:
-        pass
+    except sqlite3.OperationalError:
+        log.warning("WAL mode unavailable; using default journal (concurrent readers may block)")
     session_repo = SessionRepo(db_conn)
     queue_repo = QueueRepo(db_conn)
     resolver = SpeakerResolver(
@@ -185,8 +187,46 @@ async def stream(ws: WebSocket) -> None:
     coord.on("utterance", on_utt)
     coord.on("speaker_segment", on_seg)
 
+    # ---- debug mode callbacks ----
+
+    def _on_debug_audio(data: dict) -> None:
+        if debug is None:
+            return
+        raw_audio = data["audio"]
+        audio = np.asarray(raw_audio, dtype=np.float32)
+        debug.save_utterance(
+            utt_id="",  # filled by on_utt before debug:audio fires
+            audio=audio,
+            started_ms=data["started_ms"],
+            ended_ms=data["ended_ms"],
+            transcript=data["transcript"],
+            language=data.get("language"),
+            confidence=data.get("confidence", 0.0),
+            source=data.get("source", "mic"),
+            speaker_segments=data.get("speaker_segments", []),
+        )
+        # Attach embedding to each segment in debug data
+        for seg in data.get("speaker_segments", []):
+            emb = seg.get("embedding")
+            if emb is not None:
+                from numpy import array
+                seg["embedding"] = array(emb, dtype=np.float32)
+
+    def _on_debug_vad(data: dict) -> None:
+        if debug is not None:
+            debug.log_vad(data["ms"], data["is_speech"])
+
+    def _on_error_debug(exc: Exception) -> None:
+        if debug is not None:
+            debug.log_error(0, str(exc))
+
+    coord.on("debug:audio", _on_debug_audio)
+    coord.on("debug:vad", _on_debug_vad)
+    coord.on("error", _on_error_debug)
+
     session: RecordingSession | None = None
     sender_task: asyncio.Task | None = None
+    debug: DebugSession | None = None
     dev_audio_chunks: list[np.ndarray] = []
     _dev_audio_total_samples = 0
     _DEV_AUDIO_MAX_SAMPLES = 16000 * 300  # cap at 5 minutes per track
@@ -226,6 +266,25 @@ async def stream(ws: WebSocket) -> None:
                     elif payload.get("title") and existing["title"] != payload["title"]:
                         session_repo.update_session(sid, title=payload["title"])
                     coord.start_session(session)
+                    # SUPER DEBUG: capture config snapshot and start diagnostics
+                    if debug is None:
+                        cfg = ws.app.state.config
+                        config_snapshot = {
+                            "asr_model_id": cfg.providers.asr_model_id,
+                            "diarization_model_id": cfg.providers.diarization_model_id,
+                            "embedding_model_id": cfg.providers.embedding_model_id,
+                            "device": cfg.providers.device,
+                            "vad_threshold": cfg.pipeline.vad_threshold,
+                            "vad_min_silence_ms": cfg.pipeline.vad_min_silence_ms,
+                            "vad_speech_pad_ms": cfg.pipeline.vad_speech_pad_ms,
+                            "vad_min_utterance_ms": cfg.pipeline.vad_min_utterance_ms,
+                            "vad_max_utterance_ms": cfg.pipeline.vad_max_utterance_ms,
+                            "speaker_identification_threshold": cfg.pipeline.speaker_identification_threshold,
+                            "chunk_duration_ms": cfg.pipeline.chunk_duration_ms,
+                        }
+                        debug = start_debug_session(sid, config_snapshot)
+                        if debug:
+                            log.info("SUPER DEBUG: capturing session %s to %s", sid, debug.output_dir)
                     await ws.send_json({"type": "started", "session_id": sid})
                 elif ptype == "stop":
                     break
@@ -266,6 +325,12 @@ async def stream(ws: WebSocket) -> None:
                 session_repo.update_session(session.id, ended_at=datetime.utcnow())
             except Exception:
                 log.exception("end_session failed")
+            if debug is not None:
+                try:
+                    html_path = debug.finish(ended_at=datetime.utcnow().isoformat())
+                    log.info("SUPER DEBUG: report written to %s", html_path)
+                except Exception:
+                    log.exception("debug report generation failed")
             try:
                 if getattr(
                     ws.app.state.config.pipeline,
@@ -279,7 +344,11 @@ async def stream(ws: WebSocket) -> None:
                 log.exception("provider unload-after-stop failed")
         coord.off("utterance", on_utt)
         coord.off("speaker_segment", on_seg)
-        db_conn.close()
+        coord.off("debug:audio", _on_debug_audio)
+        coord.off("debug:vad", _on_debug_vad)
+        coord.off("error", _on_error_debug)
+        if db_conn is not None:
+            db_conn.close()
         if sender_task is not None:
             sender_task.cancel()
             try:
