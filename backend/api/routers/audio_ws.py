@@ -156,7 +156,10 @@ async def stream(ws: WebSocket) -> None:
     db_conn = sqlite3.connect(str(ws.app.state.config.database.path))
     db_conn.row_factory = sqlite3.Row
     db_conn.execute("PRAGMA foreign_keys = ON")
-    db_conn.execute("PRAGMA journal_mode=WAL")
+    try:
+        db_conn.execute("PRAGMA journal_mode=WAL")
+    except Exception:
+        pass
     session_repo = SessionRepo(db_conn)
     queue_repo = QueueRepo(db_conn)
     resolver = SpeakerResolver(
