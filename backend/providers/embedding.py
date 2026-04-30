@@ -2,11 +2,29 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import Any, Optional
 
 import numpy as np
 
 log = logging.getLogger(__name__)
+
+
+def _suppress_speechbrain_pretrained_deprecation() -> None:
+    """Silence SpeechBrain's `speechbrain.pretrained` compatibility warning.
+
+    We already import from ``speechbrain.inference``. Some SpeechBrain/PyAnnote
+    internals still touch the deprecated alias and emit a noisy user warning on
+    every startup.
+    """
+    warnings.filterwarnings(
+        "ignore",
+        message=(
+            r"Module 'speechbrain\.pretrained' was deprecated, redirecting to "
+            r"'speechbrain\.inference'\..*"
+        ),
+        category=UserWarning,
+    )
 
 
 def _patch_speechbrain_hf_compat() -> None:
@@ -84,6 +102,7 @@ class ECAPATDNNEmbeddingProvider:
         """Load model lazily."""
         self._state = "LOADING"
         self._error = None
+        _suppress_speechbrain_pretrained_deprecation()
         model_name = (
             "speechbrain/spkrec-ecapa-voxceleb"
             if self.model_id in {"ecapa", "ecapa-tdnn"}

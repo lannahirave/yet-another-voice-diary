@@ -1,14 +1,13 @@
-"""SUPER DEBUG mode — per-session diagnostic capture and HTML report generation.
+"""SUPER DEBUG mode - per-session diagnostic capture and HTML report generation.
 
 Triggered when ``NODE_ENV=development`` (or ``VOICE_DIARY_DEBUG=1``).
-Captures per-utterance WAV audio, speaker slices, VAD timeline, pipeline events,
-and config snapshot, then produces a single self-contained HTML report.
+Captures compact per-utterance metadata, VAD transitions, pipeline events,
+and on-disk WAV artifacts, then produces an HTML report plus sidecar JSON files.
 """
 from __future__ import annotations
 
-import io
 import json
-import struct
+import os
 import wave
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -19,33 +18,20 @@ import numpy as np
 
 from .debug_report import generate_debug_html
 
+
 # ---- helpers -----------------------------------------------------------
 
 
 def _debug_enabled() -> bool:
-    return os.environ.get("NODE_ENV") == "development" or os.environ.get("VOICE_DIARY_DEBUG") == "1"
-
-
-import os
+    return (
+        os.environ.get("NODE_ENV") == "development"
+        or os.environ.get("VOICE_DIARY_DEBUG") == "1"
+    )
 
 
 def _debug_dir() -> Path:
     configured = os.environ.get("VOICE_DIARY_DEBUG_DIR")
     return Path(configured) if configured else Path.cwd() / ".dev-audio"
-
-
-def _encode_wav_base64(audio: np.ndarray, sample_rate: int = 16000) -> str:
-    """Encode a float32 mono numpy array as a base64 WAV (int16 PCM)."""
-    import base64
-
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(sample_rate)
-        scaled = np.clip(audio * 32767, -32768, 32767).astype(np.int16)
-        wf.writeframes(scaled.tobytes())
-    return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
 def _wav_to_disk(audio: np.ndarray, path: Path, sample_rate: int = 16000) -> None:
@@ -83,6 +69,20 @@ class DebugSession:
     pipeline_events: list[dict[str, Any]] = field(default_factory=list)
     queue_items: list[dict[str, Any]] = field(default_factory=list)
 
+    dropped_utterances: int = 0
+    dropped_vad_events: int = 0
+    _last_vad_is_speech: bool | None = None
+    _max_utterances: int = field(
+        default_factory=lambda: int(
+            os.environ.get("VOICE_DIARY_DEBUG_MAX_UTTERANCES", "2000")
+        )
+    )
+    _max_vad_events: int = field(
+        default_factory=lambda: int(
+            os.environ.get("VOICE_DIARY_DEBUG_MAX_VAD_EVENTS", "10000")
+        )
+    )
+
     def save_utterance(
         self,
         utt_id: str,
@@ -96,13 +96,31 @@ class DebugSession:
         source: str,
         speaker_segments: list[dict[str, Any]],
     ) -> None:
-        """Save a single utterance's WAV and metadata."""
+        """Save a single utterance WAV + compact metadata."""
+        if len(self.utterances) >= self._max_utterances:
+            self.dropped_utterances += 1
+            return
+
         idx = len(self.utterances) + 1
-        utt_dir = self.output_dir / "utterances" / f"{idx:03d}-{started_ms}ms-{ended_ms}ms"
+        utt_dir_name = f"{idx:03d}-{started_ms}ms-{ended_ms}ms"
+        utt_dir = self.output_dir / "utterances" / utt_dir_name
         utt_dir.mkdir(parents=True, exist_ok=True)
 
-        b64 = _encode_wav_base64(audio)
-        _wav_to_disk(audio, utt_dir / "audio.wav")
+        wav_rel = Path("utterances") / utt_dir_name / "audio.wav"
+        _wav_to_disk(audio, self.output_dir / wav_rel)
+
+        serializable_segments: list[dict[str, Any]] = []
+        for seg in speaker_segments:
+            segment_id = seg.get("id", "")
+            serializable_segments.append(
+                {
+                    "id": segment_id,
+                    "segment_id": segment_id,
+                    "speaker": seg.get("speaker", ""),
+                    "contact_id": seg.get("contact_id"),
+                    "diarization_model_id": seg.get("diarization_model_id", ""),
+                }
+            )
 
         meta = {
             "utt_id": utt_id,
@@ -114,39 +132,20 @@ class DebugSession:
             "language": language,
             "confidence": confidence,
             "source": source,
-            "speaker_segments": speaker_segments,
-            "waveform_base64": b64,
-            "waveform_file": str(utt_dir / "audio.wav"),
+            "speaker_segments": serializable_segments,
+            "waveform_file": str(wav_rel).replace("\\", "/"),
         }
-
-        # Per-speaker audio
-        speaker_dir = utt_dir / "speakers"
-        speaker_dir.mkdir(exist_ok=True)
-        for i, seg in enumerate(speaker_segments):
-            if "speaker_audio" in seg:
-                sp_audio = seg.pop("speaker_audio")
-                _wav_to_disk(sp_audio, speaker_dir / f"speaker-{i}.wav")
-        if speaker_segments:
-            with open(speaker_dir / "embeddings.json", "w") as f:
-                embeddings = []
-                for seg in speaker_segments:
-                    emb = seg.get("embedding", None)
-                    if emb is not None:
-                        embeddings.append(
-                            {
-                                "segment_id": seg.get("id", ""),
-                                "speaker": seg.get("speaker", ""),
-                                "contact_id": seg.get("contact_id"),
-                                "embedding": (
-                                    emb.tolist() if isinstance(emb, np.ndarray) else emb
-                                ),
-                            }
-                        )
-                json.dump(embeddings, f, indent=2)
 
         self.utterances.append(meta)
 
     def log_vad(self, ms: int, is_speech: bool) -> None:
+        # Persist only transitions instead of every chunk-level sample.
+        if self._last_vad_is_speech is not None and self._last_vad_is_speech == is_speech:
+            return
+        self._last_vad_is_speech = is_speech
+        if len(self.vad_events) >= self._max_vad_events:
+            self.dropped_vad_events += 1
+            return
         self.vad_events.append({"ms": ms, "is_speech": is_speech})
 
     def log_event(self, ms: int, kind: str, message: str) -> None:
@@ -159,23 +158,28 @@ class DebugSession:
         """Generate the debug HTML report and write all logs to disk."""
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Config snapshot
-        with open(self.output_dir / "config-snapshot.json", "w") as f:
+        with open(self.output_dir / "config-snapshot.json", "w", encoding="utf-8") as f:
             json.dump(self.config_snapshot, f, indent=2)
 
-        # VAD timeline
-        with open(self.output_dir / "vad-timeline.json", "w") as f:
+        with open(self.output_dir / "vad-timeline.json", "w", encoding="utf-8") as f:
             json.dump(self.vad_events, f, indent=2)
 
-        # Pipeline events
-        with open(self.output_dir / "pipeline-events.json", "w") as f:
+        with open(self.output_dir / "pipeline-events.json", "w", encoding="utf-8") as f:
             json.dump(self.pipeline_events, f, indent=2)
 
-        # Utterance manifest
-        with open(self.output_dir / "utterances.json", "w") as f:
+        with open(self.output_dir / "debug-meta.json", "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "dropped_utterances": self.dropped_utterances,
+                    "dropped_vad_events": self.dropped_vad_events,
+                },
+                f,
+                indent=2,
+            )
+
+        with open(self.output_dir / "utterances.json", "w", encoding="utf-8") as f:
             json.dump(self.utterances, f, indent=2)
 
-        # Generate HTML
         html = generate_debug_html(
             session_id=self.session_id,
             started_at=self.started_at,

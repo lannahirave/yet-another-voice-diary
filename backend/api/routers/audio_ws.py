@@ -201,19 +201,20 @@ async def stream(ws: WebSocket) -> None:
     def _on_debug_audio(data: dict) -> None:
         if debug is None:
             return
-        raw_audio = data["audio"]
-        audio = np.asarray(raw_audio, dtype=np.float32)
-        debug.save_utterance(
-            utt_id="",  # filled by on_utt before debug:audio fires
-            audio=audio,
-            started_ms=data["started_ms"],
-            ended_ms=data["ended_ms"],
-            transcript=data["transcript"],
-            language=data.get("language"),
-            confidence=data.get("confidence", 0.0),
-            source=data.get("source", "mic"),
-            speaker_segments=data.get("speaker_segments", []),
-        )
+        try:
+            debug.save_utterance(
+                utt_id="",
+                audio=data["audio"],
+                started_ms=data["started_ms"],
+                ended_ms=data["ended_ms"],
+                transcript=data["transcript"],
+                language=data.get("language"),
+                confidence=data.get("confidence", 0.0),
+                source=data.get("source", "mic"),
+                speaker_segments=data.get("speaker_segments", []),
+            )
+        except Exception:
+            log.exception("failed to persist debug utterance")
 
     def _on_debug_vad(data: dict) -> None:
         if debug is not None:

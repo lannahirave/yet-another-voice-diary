@@ -1,7 +1,7 @@
-"""Self-contained debug HTML report generator.
+"""Debug HTML report generator.
 
-Produces a single .html file with inline CSS, JS, SVG waveforms, and
-base64-encoded WAV audio — zero external resources.  Open in any browser.
+Produces a styled report with inline CSS/JS and waveform previews.
+Audio sources can be base64 blobs or sidecar WAV files.
 """
 from __future__ import annotations
 
@@ -164,6 +164,7 @@ let activeKinds = new Set(['VAD','ASR','DIAR','EMBED','ERROR']);
 
 function fmtMs(ms){{const s=Math.floor(ms/1000);const m=Math.floor(s/60);const h=Math.floor(m/60);return h?`${{h}}:${{String(m%60).padStart(2,'0')}}:${{String(s%60).padStart(2,'0')}}`:`${{m}}:${{String(s%60).padStart(2,'0')}}`;}}
 function fmtDuration(ms){{const s=Math.round(ms/1000);return s<60?`${{s}}s`:`${{Math.floor(s/60)}}m ${{s%60}}s`;}}
+function audioSrc(u){{if(u.waveform_base64)return 'data:audio/wav;base64,'+u.waveform_base64;return u.waveform_file||'';}}
 
 // Summary
 let summary=document.getElementById('summary');
@@ -210,6 +211,7 @@ let color=COLORS[(typeof cid==='string'?cid.length:parseInt(cid||0))%8];
 segHtml+=`<tr><td><span class="spk-color" style="background:${{color}}"></span>${{seg.segment_id||seg.id||'?'}}</td><td>${{seg.contact_id||'—'}}</td><td>${{seg.speaker||'—'}}</td><td>${{seg.diarization_model_id||'—'}}</td></tr>`;
 }});
 let wavB64=u.waveform_base64||'';
+let wavSrc=audioSrc(u);
 let srcLabel=u.source==='system'?'<span class="utt-source source-system">SYS</span>':u.source==='mic'?'<span class="utt-source source-mic">MIC</span>':'';
 let langLabel=u.language?`<span class="lang-tag">${{u.language}}</span>`:'';
 uttList.innerHTML+=`
@@ -218,7 +220,7 @@ uttList.innerHTML+=`
 <div class="utt-time">${{fmtMs(u.started_ms)}}<br>${{u.duration_ms}}ms</div>
 <div>
 ${{srcLabel}}${{langLabel}}
-${{wavB64?`<details><summary>waveform</summary><div class="waveform-container"><svg id="wav-${{i}}" width="100%" height="44" style="display:block;border-radius:3px"></svg></div><audio controls style="width:100%;height:28px;margin-top:4px" src="data:audio/wav;base64,${{wavB64}}"></audio></details>`:''}}
+${{wavSrc?`<details><summary>waveform</summary><div class="waveform-container"><svg id="wav-${{i}}" width="100%" height="44" style="display:block;border-radius:3px"></svg></div><audio controls style="width:100%;height:28px;margin-top:4px" src="${{wavSrc}}"></audio></details>`:''}}
 <div class="utt-text">${{u.transcript||'(silence)'}}</div>
 ${{segHtml?`<details style="margin-top:6px"><summary>${{spkSegs.length}} speaker segment${{spkSegs.length!==1?'s':''}}</summary><table class="seg-table"><tr><th>ID</th><th>Contact</th><th>Speaker</th><th>Model</th></tr>${{segHtml}}</table></details>`:''}}
 </div></div>`;
@@ -272,15 +274,16 @@ document.getElementById('config-table').innerHTML=`<table class="config-table">$
 
 // Draw waveforms for utterances with audio
 DATA.utterances.forEach((u,i)=>{{
-if(!u.waveform_base64)return;
+let src=audioSrc(u);
+if(!src)return;
 let svg=document.getElementById('wav-'+i);
 if(!svg)return;
-let audio=new Audio('data:audio/wav;base64,'+u.waveform_base64);
+let audio=new Audio(src);
 audio.addEventListener('loadedmetadata',()=>{{
 let ctx=new OfflineAudioContext(1,4096,16000);
 let src=ctx.createBufferSource();
 src.buffer=null;
-fetch('data:audio/wav;base64,'+u.waveform_base64).then(r=>r.arrayBuffer()).then(buf=>ctx.decodeAudioData(buf)).then(audioBuf=>{{
+fetch(audio.src).then(r=>r.arrayBuffer()).then(buf=>ctx.decodeAudioData(buf)).then(audioBuf=>{{
 let data=audioBuf.getChannelData(0);
 let w=svg.clientWidth||800,h=40;
 let step=Math.max(1,Math.floor(data.length/w));
@@ -294,3 +297,4 @@ audio.load();
 </script>
 </body>
 </html>"""
+

@@ -333,7 +333,7 @@ class PipelineCoordinator:
             self._emit(
                 "debug:audio",
                 {
-                    "audio": audio.copy(),
+                    "audio": audio,
                     "started_ms": self._buffer_started_ms or 0,
                     "ended_ms": self._buffer_ended_ms,
                     "sample_rate": self._buffer_sample_rate or 16000,
@@ -347,7 +347,6 @@ class PipelineCoordinator:
                             "speaker": getattr(seg, "speaker", ""),
                             "contact_id": seg.contact_id,
                             "diarization_model_id": getattr(seg, "diarization_model_id", ""),
-                            "embedding": seg.embedding.copy() if seg.embedding is not None else None,
                         }
                         for seg in speaker_segments
                     ],
@@ -384,7 +383,7 @@ class PipelineCoordinator:
             self._emit(
                 "debug:audio",
                 {
-                    "audio": audio.copy(),
+                    "audio": audio,
                     "started_ms": self._buffer_started_ms or 0,
                     "ended_ms": self._buffer_ended_ms,
                     "sample_rate": self._buffer_sample_rate or 16000,
@@ -398,7 +397,6 @@ class PipelineCoordinator:
                             "speaker": getattr(seg, "speaker", ""),
                             "contact_id": seg.contact_id,
                             "diarization_model_id": getattr(seg, "diarization_model_id", ""),
-                            "embedding": seg.embedding.copy() if seg.embedding is not None else None,
                         }
                         for seg in speaker_segments
                     ],
@@ -446,10 +444,11 @@ class PipelineCoordinator:
         was_in_speech = self._in_speech
         is_speech_now = vad_segment.is_speech
 
-        self._emit(
-            "debug:vad",
-            {"ms": started_ms, "is_speech": is_speech_now},
-        )
+        if self.has_listeners("debug:vad"):
+            self._emit(
+                "debug:vad",
+                {"ms": started_ms, "is_speech": is_speech_now},
+            )
 
         # Buffer audio that is part of a speech span, including the
         # falling-edge chunk so Silero's trailing speech-pad is preserved.
