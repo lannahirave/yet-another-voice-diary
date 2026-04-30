@@ -389,10 +389,7 @@ export function Settings() {
   }, [config])
 
   const refetchConfig = configQuery.refetch
-  const loadingKinds = useMemo(
-    () => PROVIDER_KINDS.filter((k) => providers[k]?.state === 'LOADING'),
-    [providers],
-  )
+  const loadingKinds = PROVIDER_KINDS.filter((k) => providers[k]?.state === 'LOADING')
 
   // Subscribe to SSE progress only while at least one provider is LOADING.
   // Each subscription closes itself when the stream emits its final snapshot.
@@ -427,18 +424,9 @@ export function Settings() {
   const embeddingProvider = providers.embedding
   const diarizationProvider = providers.diarization
 
-  const asrModels = useMemo(
-    () => withCurrentFallback(ASR_MODELS, asrProvider),
-    [asrProvider],
-  )
-  const embeddingModels = useMemo(
-    () => withCurrentFallback(EMBED_MODELS, embeddingProvider),
-    [embeddingProvider],
-  )
-  const diarizationModels = useMemo(
-    () => withCurrentFallback(DIAR_MODELS, diarizationProvider),
-    [diarizationProvider],
-  )
+  const asrModels = withCurrentFallback(ASR_MODELS, asrProvider)
+  const embeddingModels = withCurrentFallback(EMBED_MODELS, embeddingProvider)
+  const diarizationModels = withCurrentFallback(DIAR_MODELS, diarizationProvider)
 
   const selectedAsrModel = asrProvider?.model_id ?? 'large-v3-turbo'
   const selectedEmbeddingModel = embeddingProvider?.model_id ?? 'ecapa'

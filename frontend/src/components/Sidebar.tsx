@@ -1,3 +1,4 @@
+import { startTransition, useMemo } from 'react'
 import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQueueCountQuery } from '../query/queue'
@@ -26,7 +27,7 @@ export function Sidebar({ screen, setScreen, recording }: SidebarProps) {
   const countQuery = useQueueCountQuery()
   const unknownCount = countQuery.data ?? 0
 
-  const nav: NavGroup[] = [
+  const nav: NavGroup[] = useMemo(() => [
     {
       group: t('sidebar.groupRecords'),
       items: [
@@ -48,7 +49,7 @@ export function Sidebar({ screen, setScreen, recording }: SidebarProps) {
         { id: 'settings', label: t('sidebar.settings'), icon: '◈' },
       ],
     },
-  ]
+  ], [t, unknownCount])
 
   return (
     <div style={sbS.root}>
@@ -66,7 +67,7 @@ export function Sidebar({ screen, setScreen, recording }: SidebarProps) {
               return (
                 <button
                   key={item.id}
-                  onClick={() => setScreen(item.id)}
+                  onClick={() => startTransition(() => setScreen(item.id))}
                   data-testid={`nav-${item.id}`}
                   style={{ ...sbS.navItem, ...(active ? sbS.navItemActive : {}) }}
                 >

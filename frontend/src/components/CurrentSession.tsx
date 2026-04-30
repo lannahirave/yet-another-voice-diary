@@ -13,7 +13,7 @@ import { useContactsData } from '../query/contacts'
 import type { Utterance } from '../types/domain'
 import { fmt } from '../utils/format'
 import { Avatar } from './shared/Avatar'
-import { AudioLevelFooter } from './shared/AudioLevelFooter'
+import { AudioLevelFooterLive } from './shared/AudioLevelFooter'
 import { getUtteranceCandidates } from '../api/sessions'
 import { useIdentifyUtteranceMutation } from '../query/sessions'
 
@@ -190,6 +190,7 @@ interface AudioLevelSnapshot {
 }
 
 const SILENCE_SNAPSHOT: AudioLevelSnapshot = { db: -60, level: 0 }
+const ESTIMATE_SIZE = () => 120
 
 function measureAudioLevel(samples: Float32Array): AudioLevelSnapshot {
   if (samples.length === 0) return SILENCE_SNAPSHOT
@@ -223,8 +224,8 @@ export function CurrentSession({
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [showLive, setShowLive] = useState(false)
   const [wsError, setWsError] = useState<string | null>(null)
-  const [micLevel, setMicLevel] = useState<AudioLevelSnapshot>(SILENCE_SNAPSHOT)
-  const [systemLevel, setSystemLevel] = useState<AudioLevelSnapshot>(SILENCE_SNAPSHOT)
+  const micLevelRef = useRef<AudioLevelSnapshot>(SILENCE_SNAPSHOT)
+  const sysLevelRef = useRef<AudioLevelSnapshot>(SILENCE_SNAPSHOT)
   const transcriptRef = useRef<HTMLDivElement | null>(null)
   const timerRef = useRef<number | null>(null)
   const wsRef = useRef<AudioWebSocket | null>(null)
@@ -246,10 +247,6 @@ export function CurrentSession({
     return window.localStorage?.getItem('vd_capture_system') === '1'
   })
   const systemSupported = isSystemAudioSupported()
-  // Throttle audio level renders: only update state once per ~100ms
-  const micLevelRef = useRef<AudioLevelSnapshot>(SILENCE_SNAPSHOT)
-  const sysLevelRef = useRef<AudioLevelSnapshot>(SILENCE_SNAPSHOT)
-  const levelFrameRef = useRef<number>(0)
 
   const identifyMutation = useIdentifyUtteranceMutation(sessionId)
   const onIdentify = useCallback(
@@ -264,7 +261,7 @@ export function CurrentSession({
   const rowVirtualizer = useVirtualizer({
     count: utterances.length,
     getScrollElement: useCallback(() => transcriptRef.current, []),
-    estimateSize: () => 120,
+    estimateSize: ESTIMATE_SIZE,
     overscan: 3,
   })
 
@@ -306,24 +303,9 @@ export function CurrentSession({
     }
   }, [utterances, showLive, rowVirtualizer])
 
-  const _scheduleLevelUpdate = useCallback(() => {
-    if (levelFrameRef.current) return
-    levelFrameRef.current = requestAnimationFrame(() => {
-      levelFrameRef.current = 0
-      setMicLevel(micLevelRef.current)
-      setSystemLevel(sysLevelRef.current)
-    })
-  }, [])
-
   const stopAudio = () => {
-    if (levelFrameRef.current) {
-      cancelAnimationFrame(levelFrameRef.current)
-      levelFrameRef.current = 0
-    }
     micLevelRef.current = SILENCE_SNAPSHOT
     sysLevelRef.current = SILENCE_SNAPSHOT
-    setMicLevel(SILENCE_SNAPSHOT)
-    setSystemLevel(SILENCE_SNAPSHOT)
     try {
       processorRef.current?.disconnect()
     } catch {
@@ -404,7 +386,6 @@ export function CurrentSession({
     processor.onaudioprocess = (e) => {
       const f32 = e.inputBuffer.getChannelData(0)
       sysLevelRef.current = measureAudioLevel(f32)
-      _scheduleLevelUpdate()
       const chunk = actualRate === 16000 ? f32 : downsampleTo16k(f32, actualRate)
       sysWs.sendPCMChunk(chunk.buffer as ArrayBuffer)
     }
@@ -459,15 +440,17 @@ export function CurrentSession({
 
       ws.on('error', (err) => setWsError(recordingErrorMessage(err, t)))
 
+      const streamPromise = navigator.mediaDevices?.getUserMedia({
+        audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true },
+      })
+
       await ws.connect(session.id)
 
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error(t('currentSession.errorBrowserUnsupported'))
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true },
-      })
+      const stream = await streamPromise
       streamRef.current = stream
 
       const ctx = new AudioContext({ sampleRate: 16000 })
@@ -482,7 +465,6 @@ export function CurrentSession({
       processor.onaudioprocess = (e) => {
         const f32 = e.inputBuffer.getChannelData(0)
         micLevelRef.current = measureAudioLevel(f32)
-        _scheduleLevelUpdate()
         const chunk = actualRate === 16000 ? f32 : downsampleTo16k(f32, actualRate)
         ws.sendPCMChunk(chunk.buffer as ArrayBuffer)
       }
@@ -524,8 +506,8 @@ export function CurrentSession({
   const pause = () => {
     processorRef.current?.disconnect()
     sourceRef.current?.disconnect()
-    setMicLevel(SILENCE_SNAPSHOT)
-    setSystemLevel(SILENCE_SNAPSHOT)
+    micLevelRef.current = SILENCE_SNAPSHOT
+    sysLevelRef.current = SILENCE_SNAPSHOT
     setRecState('paused')
     setRecording(false)
     setShowLive(false)
@@ -720,11 +702,12 @@ export function CurrentSession({
       </div>
 
       <div style={csS.bottombar}>
-        <AudioLevelFooter
+        <AudioLevelFooterLive
           active={recState === 'recording'}
           paused={recState === 'paused'}
-          mic={micLevel}
-          system={systemEnabled && systemSupported ? systemLevel : undefined}
+          systemEnabled={systemEnabled && systemSupported}
+          micLevelRef={micLevelRef}
+          systemLevelRef={sysLevelRef}
         />
       </div>
     </div>

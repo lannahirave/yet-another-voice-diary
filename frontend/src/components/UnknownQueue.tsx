@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { startTransition, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useContactsData, useCreateContactMutation } from '../query/contacts'
@@ -107,7 +107,7 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
             data-testid="queue-search"
             placeholder={t('queue.searchPlaceholder')}
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => startTransition(() => setSearchQuery(e.target.value))}
             style={uqS.searchInput}
           />
           {searchQuery && (
@@ -452,7 +452,7 @@ const uqS: Record<string, CSSProperties> = {
     fontSize: 12,
     padding: '0 2px',
   },
-  list: { flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 },
+  list: { flex: 1, overflowY: 'auto', contentVisibility: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 },
   loadMoreBtn: {
     background: 'var(--surface2)',
     border: '1px solid var(--border)',

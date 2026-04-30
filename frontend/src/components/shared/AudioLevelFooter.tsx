@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -11,6 +12,14 @@ interface AudioLevelFooterProps {
   paused: boolean
   mic: AudioLevelSnapshot
   system?: AudioLevelSnapshot
+}
+
+interface AudioLevelFooterLiveProps {
+  active: boolean
+  paused: boolean
+  systemEnabled: boolean
+  micLevelRef: { current: AudioLevelSnapshot }
+  systemLevelRef: { current: AudioLevelSnapshot }
 }
 
 function channelStatus(
@@ -98,6 +107,47 @@ export function AudioLevelFooter({
         )}
       </div>
     </div>
+  )
+}
+
+export function AudioLevelFooterLive({
+  active,
+  paused,
+  systemEnabled,
+  micLevelRef,
+  systemLevelRef,
+}: AudioLevelFooterLiveProps) {
+  const [mic, setMic] = useState<AudioLevelSnapshot>({ db: -60, level: 0 })
+  const [sys, setSys] = useState<AudioLevelSnapshot>({ db: -60, level: 0 })
+  const rafRef = useRef<number>(0)
+
+  useEffect(() => {
+    if (!active) {
+      setMic({ db: -60, level: 0 })
+      setSys({ db: -60, level: 0 })
+      return
+    }
+    let running = true
+    const tick = () => {
+      if (!running) return
+      setMic(micLevelRef.current)
+      if (systemEnabled) setSys(systemLevelRef.current)
+      rafRef.current = requestAnimationFrame(tick)
+    }
+    tick()
+    return () => {
+      running = false
+      cancelAnimationFrame(rafRef.current)
+    }
+  }, [active, systemEnabled, micLevelRef, systemLevelRef])
+
+  return (
+    <AudioLevelFooter
+      active={active}
+      paused={paused}
+      mic={mic}
+      system={systemEnabled ? sys : undefined}
+    />
   )
 }
 

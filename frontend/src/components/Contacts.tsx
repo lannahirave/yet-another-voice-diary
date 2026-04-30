@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -34,19 +34,15 @@ export function Contacts() {
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
 
-  useEffect(() => {
-    if (contacts.length === 0) {
-      setSelected(null)
-      return
-    }
-    if (!selected || !contacts.some((contact) => contact.id === selected)) {
-      setSelected(contacts[0].id)
-    }
+  const effectiveSelected = useMemo(() => {
+    if (contacts.length === 0) return null
+    if (selected && contacts.some((c) => c.id === selected)) return selected
+    return contacts[0]?.id ?? null
   }, [contacts, selected])
 
-  const utterancesQuery = useContactUtterancesQuery(selected, tab === 'utterances')
+  const utterancesQuery = useContactUtterancesQuery(effectiveSelected, tab === 'utterances')
 
-  const contact: Contact | null = contacts.find((item) => item.id === selected) ?? null
+  const contact: Contact | null = contacts.find((item) => item.id === effectiveSelected) ?? null
   const filtered = contacts.filter((item) =>
     item.name.toLowerCase().includes(search.toLowerCase()),
   )
@@ -82,7 +78,7 @@ export function Contacts() {
             />
           </div>
         </div>
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div style={{ flex: 1, overflowY: 'auto', contentVisibility: 'auto' }}>
           {filtered.map((item) => (
             <div
               key={item.id}
@@ -90,10 +86,10 @@ export function Contacts() {
               onClick={() => setSelected(item.id)}
               style={{
                 ...ctS.contactRow,
-                ...(selected === item.id ? ctS.contactRowActive : {}),
+                ...(effectiveSelected === item.id ? ctS.contactRowActive : {}),
               }}
             >
-              {selected === item.id && <div style={ctS.activeLine} />}
+              {effectiveSelected === item.id && <div style={ctS.activeLine} />}
               <div
                 style={{
                   width: 34,

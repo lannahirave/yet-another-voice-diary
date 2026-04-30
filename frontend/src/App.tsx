@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useState } from 'react'
-import { AllSessions } from './components/AllSessions'
-import { Contacts } from './components/Contacts'
-import { CurrentSession } from './components/CurrentSession'
-import { Search } from './components/Search'
-import { Settings } from './components/Settings'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { Sidebar } from './components/Sidebar'
-import { UnknownQueue } from './components/UnknownQueue'
 import { useScreen } from './hooks/useScreen'
 import type { ScreenId, Utterance } from './types/domain'
+
+const AllSessions = lazy(() => import('./components/AllSessions').then(m => ({ default: m.AllSessions })))
+const Contacts = lazy(() => import('./components/Contacts').then(m => ({ default: m.Contacts })))
+const CurrentSession = lazy(() => import('./components/CurrentSession').then(m => ({ default: m.CurrentSession })))
+const Search = lazy(() => import('./components/Search').then(m => ({ default: m.Search })))
+const Settings = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })))
+const UnknownQueue = lazy(() => import('./components/UnknownQueue').then(m => ({ default: m.UnknownQueue })))
 
 interface EditModeMessage {
   type: string
@@ -22,12 +23,13 @@ export function App() {
 
   const applyLiveResolution = useCallback((segmentIds: string[], contactId: string) => {
     let previousUtterances: Utterance[] = []
+    const idSet = new Set(segmentIds)
 
     setUtterances((current) => {
       previousUtterances = current
       let changed = false
       const next = current.map((utterance) => {
-        if (!utterance.speakerSegmentId || !segmentIds.includes(utterance.speakerSegmentId)) {
+        if (!utterance.speakerSegmentId || !idSet.has(utterance.speakerSegmentId)) {
           return utterance
         }
         changed = true
@@ -80,25 +82,29 @@ export function App() {
         recording={recording}
       />
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: screen === 'session' ? 'block' : 'none', flex: 1, overflow: 'hidden' }}>
-          <CurrentSession
-            setRecording={setRecording}
-            utterances={utterances}
-            setUtterances={setUtterances}
-            onSessionIdChange={setCurrentSessionId}
-            onIdentifyUnknown={() => setScreen('queue')}
-          />
-        </div>
-        {screen === 'sessions' && <AllSessions />}
+        <Suspense fallback={null}>
+          <div style={{ display: screen === 'session' ? 'block' : 'none', flex: 1, overflow: 'hidden' }}>
+            <CurrentSession
+              setRecording={setRecording}
+              utterances={utterances}
+              setUtterances={setUtterances}
+              onSessionIdChange={setCurrentSessionId}
+              onIdentifyUnknown={() => setScreen('queue')}
+            />
+          </div>
+        </Suspense>
+        {screen === 'sessions' && <Suspense fallback={null}><AllSessions /></Suspense>}
         {screen === 'queue' && (
-          <UnknownQueue
-            onApplyLiveResolution={applyLiveResolution}
-            currentSessionId={currentSessionId}
-          />
+          <Suspense fallback={null}>
+            <UnknownQueue
+              onApplyLiveResolution={applyLiveResolution}
+              currentSessionId={currentSessionId}
+            />
+          </Suspense>
         )}
-        {screen === 'contacts' && <Contacts />}
-        {screen === 'search' && <Search />}
-        {screen === 'settings' && <Settings />}
+        {screen === 'contacts' && <Suspense fallback={null}><Contacts /></Suspense>}
+        {screen === 'search' && <Suspense fallback={null}><Search /></Suspense>}
+        {screen === 'settings' && <Suspense fallback={null}><Settings /></Suspense>}
       </div>
     </div>
   )

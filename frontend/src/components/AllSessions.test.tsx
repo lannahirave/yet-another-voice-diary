@@ -107,7 +107,7 @@ describe('AllSessions inline rename', () => {
     // Remount (simulate returning to tab)
     renderWithProviders()
     await waitFor(() => {
-      expect(screen.getByText('Standup notes')).toBeDefined()
+      expect(screen.getByTestId('session-title').textContent).toBe('Standup notes')
     })
   })
 })

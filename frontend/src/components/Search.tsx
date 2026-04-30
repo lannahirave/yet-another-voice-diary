@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchResultsQuery } from '../query/search'
@@ -34,7 +34,7 @@ export function Search() {
         : [...current, value]
     ))
 
-  const grouped = hits.reduce<Record<string, { title: string; items: ApiSearchHit[] }>>(
+  const grouped = useMemo(() => hits.reduce<Record<string, { title: string; items: ApiSearchHit[] }>>(
     (acc, hit) => {
       if (!acc[hit.session_id]) {
         acc[hit.session_id] = { title: hit.session_title || hit.session_id, items: [] }
@@ -43,7 +43,7 @@ export function Search() {
       return acc
     },
     {},
-  )
+  ), [hits])
 
   function msToTime(ms: number): string {
     const s = Math.floor(ms / 1000)
@@ -61,7 +61,7 @@ export function Search() {
             data-testid="search-input"
             placeholder={t('search.placeholder')}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => startTransition(() => setQuery(e.target.value))}
             style={srS.searchInput}
           />
           {query && (
@@ -179,7 +179,7 @@ const srS: Record<string, CSSProperties> = {
     cursor: 'pointer',
     transition: 'all 0.1s',
   },
-  results: { flex: 1, overflowY: 'auto', padding: '14px 22px', display: 'flex', flexDirection: 'column', gap: 14 },
+  results: { flex: 1, overflowY: 'auto', contentVisibility: 'auto', padding: '14px 22px', display: 'flex', flexDirection: 'column', gap: 14 },
   empty: { padding: '40px 0', textAlign: 'center', color: 'var(--text-dim)', fontSize: 14 },
   group: { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' },
   groupHeader: {

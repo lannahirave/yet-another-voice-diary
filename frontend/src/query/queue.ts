@@ -24,9 +24,10 @@ function patchSessionUtterances(
 ): Utterance[] | undefined {
   if (!utterances) return utterances
 
+  const idSet = new Set(segmentIds)
   let changed = false
   const next = utterances.map((utterance) => {
-    if (!utterance.speakerSegmentId || !segmentIds.includes(utterance.speakerSegmentId)) {
+    if (!utterance.speakerSegmentId || !idSet.has(utterance.speakerSegmentId)) {
       return utterance
     }
     changed = true

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useContactsData } from '../query/contacts'
@@ -28,19 +28,15 @@ export function AllSessions() {
   const sessions = sessionsQuery.data ?? []
   const isLoading = sessionsQuery.isLoading
 
-  useEffect(() => {
-    if (sessions.length === 0) {
-      setSelected(null)
-      return
-    }
-    if (!selected || !sessions.some((session) => session.id === selected)) {
-      setSelected(sessions[0].id)
-    }
+  const effectiveSelected = useMemo(() => {
+    if (sessions.length === 0) return null
+    if (selected && sessions.some((s) => s.id === selected)) return selected
+    return sessions[0]?.id ?? null
   }, [sessions, selected])
 
-  const utterancesQuery = useSessionUtterancesQuery(selected)
+  const utterancesQuery = useSessionUtterancesQuery(effectiveSelected)
   const utterances = utterancesQuery.data ?? []
-  const session = sessions.find((item) => item.id === selected) ?? null
+  const session = sessions.find((item) => item.id === effectiveSelected) ?? null
   const filteredUtterances = utterances.filter(
     (utterance) =>
       !searchText ||
@@ -127,7 +123,7 @@ export function AllSessions() {
           </div>
         )}
         {sessions.map((item) => {
-          const active = item.id === selected
+          const active = item.id === effectiveSelected
           const speakers = item.speakers
             .map((speakerId) => contactById(speakerId))
             .filter((contact): contact is NonNullable<typeof contact> => contact !== null)
@@ -267,7 +263,7 @@ export function AllSessions() {
                   data-testid="transcript-search"
                   placeholder={t('allSessions.searchPlaceholder')}
                   value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
+                  onChange={(e) => startTransition(() => setSearchText(e.target.value))}
                   style={asS.searchInput}
                 />
               </div>
@@ -406,6 +402,7 @@ const asS: Record<string, CSSProperties> = {
     width: 308,
     borderRight: '1px solid var(--border)',
     overflowY: 'auto',
+    contentVisibility: 'auto',
     flexShrink: 0,
     background: 'var(--surface)',
   },

@@ -7,10 +7,16 @@ const PALETTE = [
   '#06B6D4', '#84CC16', '#F97316', '#A78BFA',
 ]
 
+const _colorCache = new Map<string, string>()
+
 function hashColor(id: string): string {
+  const cached = _colorCache.get(id)
+  if (cached) return cached
   let h = 0
   for (let i = 0; i < id.length; i++) h = (Math.imul(31, h) + id.charCodeAt(i)) | 0
-  return PALETTE[Math.abs(h) % PALETTE.length]
+  const color = PALETTE[Math.abs(h) % PALETTE.length]
+  _colorCache.set(id, color)
+  return color
 }
 
 function toInitials(name: string): string {
