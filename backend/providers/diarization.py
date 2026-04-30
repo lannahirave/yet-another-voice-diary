@@ -206,11 +206,22 @@ def _iter_diarization_tracks(diarization: Any):
 class PyAnnoteDiarizationProvider:
     """PyAnnote-based diarization provider."""
 
-    def __init__(self, model_id: str = "pyannote"):
+    def __init__(self, model_id: str = "pyannote", *, device: str = "auto"):
         self.model_id = normalize_diarization_model_id(model_id)
+        self.device = device
         self._model: Optional[Any] = None
         self._state = "UNLOADED"
         self._error: Optional[str] = None
+
+    def _resolve_device(self) -> str:
+        if self.device != "auto":
+            return self.device
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+        if torch.backends.mps.is_available():
+            return "mps"
+        return "cpu"
 
     def _load_model(self):
         """Load model lazily."""
@@ -251,7 +262,14 @@ class PyAnnoteDiarizationProvider:
                 _pyannote_checkpoint_load_compat(model_name),
                 _suppress_unused_pyannote_torchcodec_warning(),
             ):
-                self._model = Pipeline.from_pretrained(model_name)
+                resolved_device = self._resolve_device()
+                if resolved_device == "cuda" or resolved_device == "mps":
+                    import torch
+                    self._model = Pipeline.from_pretrained(
+                        model_name, device=torch.device(resolved_device)
+                    )
+                else:
+                    self._model = Pipeline.from_pretrained(model_name)
         except Exception as exc:
             self._error = (
                 f"failed to load diarization model {model_name}: {exc}"
@@ -320,17 +338,34 @@ class NeMoSortformerDiarizationProvider:
     invoked on already-closed VAD chunks rather than on the model's native
     live-streaming step API. We still configure the published high-accuracy
     streaming parameters so inference follows NVIDIA's recommended cache sizes.
+
+    NeMo Sortformer requires CUDA; it does not support Apple MPS.
     """
 
-    def __init__(self, model_id: str = SORTFORMER_V21_MODEL_ID):
+    def __init__(self, model_id: str = SORTFORMER_V21_MODEL_ID, *, device: str = "auto"):
         self.model_id = model_id
+        self.device = device
         self._model: Optional[Any] = None
         self._state = "UNLOADED"
         self._error: Optional[str] = None
 
+    def _resolve_device(self) -> str:
+        if self.device != "auto":
+            return self.device
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+        return "cpu"
+
     def _load_model(self) -> None:
         self._state = "LOADING"
         self._error = None
+
+        device = self._resolve_device()
+        if device == "mps":
+            self._error = "NeMo Sortformer does not support MPS; use PyAnnote for Apple Silicon"
+            self._state = "ERROR"
+            raise RuntimeError(self._error)
 
         if self.model_id != SORTFORMER_V21_MODEL_ID:
             self._error = f"unsupported NeMo diarization model_id: {self.model_id}"
@@ -407,10 +442,12 @@ class NeMoSortformerDiarizationProvider:
 
 def create_diarization_provider(
     model_id: str,
+    *,
+    device: str = "auto",
 ) -> PyAnnoteDiarizationProvider | NeMoSortformerDiarizationProvider:
     normalized = normalize_diarization_model_id(model_id)
     if normalized in {"pyannote", "pyannote-3.1"}:
-        return PyAnnoteDiarizationProvider(model_id=normalized)
+        return PyAnnoteDiarizationProvider(model_id=normalized, device=device)
     if normalized == SORTFORMER_V21_MODEL_ID:
-        return NeMoSortformerDiarizationProvider(model_id=normalized)
+        return NeMoSortformerDiarizationProvider(model_id=normalized, device=device)
     raise ValueError(f"unsupported diarization model_id: {model_id}")

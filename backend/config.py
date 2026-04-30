@@ -6,6 +6,23 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+import torch
+
+
+def _resolve_device(device: str) -> str:
+    """Normalize the user-visible device name, falling back to auto-detection.
+    
+    ``"auto"`` probes CUDA → MPS → CPU in that order.  Explicit strings
+    ``"cuda"``, ``"mps"``, ``"cpu"`` are passed through unchanged.
+    """
+    if device != "auto":
+        return device
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
 SUPPORTED_DIARIZATION_MODEL_IDS = frozenset(
     {"pyannote", "pyannote-3.1", "sortformer-v2.1"}
 )
@@ -82,6 +99,7 @@ class ProviderConfig:
     asr_model_id: str = "large-v3-turbo"
     diarization_model_id: str = "pyannote"
     embedding_model_id: str = "ecapa"
+    device: str = "auto"
     preload_on_start: bool = False
 
     def __post_init__(self) -> None:

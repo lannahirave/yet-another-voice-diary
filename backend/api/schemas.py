@@ -164,6 +164,7 @@ class ProviderStatus(BaseModel):
     kind: str  # "asr" | "embedding" | "diarization" | "vad"
     model_id: str
     state: str  # "UNLOADED" | "LOADING" | "LOADED" | "ERROR"
+    device: str = "cpu"
     error: Optional[str] = None
 
 
@@ -177,6 +178,7 @@ class ConfigOut(BaseModel):
     chunk_duration_ms: int
     unload_models_after_stop: bool = False
     preload_on_start: bool = False
+    device: str = "auto"
     providers: list[ProviderStatus]
 
 
@@ -190,6 +192,10 @@ class UnloadAfterStopUpdate(BaseModel):
 
 class PreloadOnStartUpdate(BaseModel):
     value: bool
+
+
+class DeviceUpdate(BaseModel):
+    value: str  # "auto" | "cpu" | "cuda" | "mps"
 
 
 class StorageInfoOut(BaseModel):

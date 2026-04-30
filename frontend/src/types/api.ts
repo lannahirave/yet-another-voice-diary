@@ -90,6 +90,7 @@ export interface ApiProviderStatus {
   kind: string
   model_id: string
   state: string
+  device: string
   error: string | null
 }
 
@@ -99,6 +100,7 @@ export interface ApiConfig {
   chunk_duration_ms: number
   unload_models_after_stop: boolean
   preload_on_start: boolean
+  device: string
   providers: ApiProviderStatus[]
 }
 

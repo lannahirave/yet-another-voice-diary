@@ -63,11 +63,22 @@ class ECAPATDNNEmbeddingProvider:
     not generated in production code.
     """
 
-    def __init__(self, model_id: str = "ecapa"):
+    def __init__(self, model_id: str = "ecapa", *, device: str = "auto"):
         self.model_id = model_id
+        self.device = device
         self._model: Optional[Any] = None
         self._state = "UNLOADED"
         self._error: Optional[str] = None
+
+    def _resolve_device(self) -> str:
+        if self.device != "auto":
+            return self.device
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+        if torch.backends.mps.is_available():
+            return "mps"
+        return "cpu"
 
     def _load_model(self):
         """Load model lazily."""
@@ -91,7 +102,7 @@ class ECAPATDNNEmbeddingProvider:
 
         _patch_speechbrain_hf_compat()
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = self._resolve_device()
         try:
             self._model = SpeakerRecognition.from_hparams(
                 source=model_name,

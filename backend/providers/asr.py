@@ -51,43 +51,44 @@ class WhisperASRProvider:
         self._state = "LOADING"
         self._error = None
 
-        try:
-            from faster_whisper import WhisperModel  # type: ignore[import-untyped]
-        except Exception as exc:
-            faster_whisper_error = exc
-            log.exception("faster-whisper backend failed to import")
-        else:
-            device = self.device or self._auto_device()
-            compute_type = self.compute_type or (
-                "float16" if device == "cuda" else "int8"
-            )
-            log.info(
-                "Loading faster-whisper model=%s device=%s compute_type=%s",
-                self.model_id,
-                device,
-                compute_type,
-            )
-            self._model = WhisperModel(
-                self.model_id,
-                device=device,
-                compute_type=compute_type,
-                cpu_threads=self.cpu_threads,
-            )
-            self._backend = "faster-whisper"
-            self._state = "LOADED"
-            return
+        device = self.device or self._auto_device()
+        use_faster_whisper = device != "mps"
+
+        if use_faster_whisper:
+            try:
+                from faster_whisper import WhisperModel  # type: ignore[import-untyped]
+            except Exception as exc:
+                faster_whisper_error = exc
+                log.exception("faster-whisper backend failed to import")
+                use_faster_whisper = False
+            else:
+                compute_type = self.compute_type or (
+                    "float16" if device == "cuda" else "int8"
+                )
+                log.info(
+                    "Loading faster-whisper model=%s device=%s compute_type=%s",
+                    self.model_id,
+                    device,
+                    compute_type,
+                )
+                self._model = WhisperModel(
+                    self.model_id,
+                    device=device,
+                    compute_type=compute_type,
+                    cpu_threads=self.cpu_threads,
+                )
+                self._backend = "faster-whisper"
+                self._state = "LOADED"
+                return
 
         if self._load_transformers_model():
-            self._error = (
-                "faster-whisper not installed; using Transformers ASR fallback "
-                f"({faster_whisper_error})"
-            )
+            reason = "MPS device selected" if device == "mps" else "faster-whisper not installed"
+            self._error = f"{reason}; using Transformers ASR fallback"
             log.warning(self._error)
             return
 
         message = (
-            "faster-whisper not installed and Transformers ASR could not be loaded "
-            f"({faster_whisper_error})"
+            "faster-whisper not installed and Transformers ASR could not be loaded"
         )
         self._error = message
         self._state = "ERROR"
@@ -106,7 +107,12 @@ class WhisperASRProvider:
             return False
 
         device_name = self.device or self._auto_device()
-        device = "cuda:0" if device_name == "cuda" and torch.cuda.is_available() else "cpu"
+        if device_name == "cuda" and torch.cuda.is_available():
+            device = "cuda:0"
+        elif device_name == "mps" and torch.backends.mps.is_available():
+            device = "mps"
+        else:
+            device = "cpu"
         torch_dtype = torch.float16 if device != "cpu" else torch.float32
         model_id = self._transformers_model_id(self.model_id)
 
@@ -171,8 +177,11 @@ class WhisperASRProvider:
     def _auto_device() -> str:
         try:
             import torch  # type: ignore[import-untyped]
-
-            return "cuda" if torch.cuda.is_available() else "cpu"
+            if torch.cuda.is_available():
+                return "cuda"
+            if torch.backends.mps.is_available():
+                return "mps"
+            return "cpu"
         except ImportError:
             return "cpu"
 

@@ -83,10 +83,17 @@ def create_app(config: Optional[BackendConfig] = None) -> FastAPI:
     runner.apply_pending()
     db.close()
 
-    asr = WhisperASRProvider(model_id=config.providers.asr_model_id)
-    diarization = create_diarization_provider(config.providers.diarization_model_id)
+    asr = WhisperASRProvider(
+        model_id=config.providers.asr_model_id,
+        device=config.providers.device,
+    )
+    diarization = create_diarization_provider(
+        config.providers.diarization_model_id,
+        device=config.providers.device,
+    )
     embedding = ECAPATDNNEmbeddingProvider(
-        model_id=config.providers.embedding_model_id
+        model_id=config.providers.embedding_model_id,
+        device=config.providers.device,
     )
     coordinator = PipelineCoordinator(config.pipeline, asr, diarization, embedding)
 

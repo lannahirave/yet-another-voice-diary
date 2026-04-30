@@ -9,6 +9,7 @@ from ...config import SUPPORTED_DIARIZATION_MODEL_IDS, normalize_diarization_mod
 from ...providers.diarization import create_diarization_provider
 from ..schemas import (
     ConfigOut,
+    DeviceUpdate,
     PreloadOnStartUpdate,
     ProviderSelect,
     ProviderStatus,
@@ -25,10 +26,12 @@ def _provider_status(kind: str, provider: object) -> ProviderStatus:
     state = getattr(provider, "_state", None)
     if state is None:
         state = "LOADED" if getattr(provider, "_model", None) is not None else "UNLOADED"
+    device = getattr(provider, "device", "auto")
     return ProviderStatus(
         kind=kind,
         model_id=str(model_id),
         state=str(state),
+        device=device,
         error=getattr(provider, "_error", None),
     )
 
@@ -47,6 +50,7 @@ def get_config_rt(request: Request):
         chunk_duration_ms=cfg.pipeline.chunk_duration_ms,
         unload_models_after_stop=cfg.pipeline.unload_models_after_stop,
         preload_on_start=cfg.providers.preload_on_start,
+        device=cfg.providers.device,
         providers=[
             _provider_status(kind, provider) for kind, provider in providers.items()
         ],
@@ -73,6 +77,51 @@ def set_unload_after_stop(payload: UnloadAfterStopUpdate, request: Request):
 def set_preload_on_start(payload: PreloadOnStartUpdate, request: Request):
     request.app.state.config.providers.preload_on_start = bool(payload.value)
     request.app.state.config.save()
+    return get_config_rt(request)
+
+
+@router.post("/device", response_model=ConfigOut)
+def set_device(payload: DeviceUpdate, request: Request):
+    allowed = {"auto", "cpu", "cuda", "mps"}
+    if payload.value not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"invalid device: {payload.value}. Allowed: {', '.join(sorted(allowed))}",
+        )
+    config = request.app.state.config
+    if config.providers.device == payload.value:
+        return get_config_rt(request)
+
+    config.providers.device = payload.value
+    providers = request.app.state.providers
+
+    for kind, provider in providers.items():
+        if hasattr(provider, "unload"):
+            provider.unload()
+    # Re-create providers with the new device
+    providers["asr"] = WhisperASRProvider(
+        model_id=config.providers.asr_model_id,
+        device=payload.value,
+    )
+    providers["diarization"] = create_diarization_provider(
+        config.providers.diarization_model_id,
+        device=payload.value,
+    )
+    providers["embedding"] = ECAPATDNNEmbeddingProvider(
+        model_id=config.providers.embedding_model_id,
+        device=payload.value,
+    )
+
+    coordinator = getattr(request.app.state, "coordinator", None)
+    if coordinator is not None:
+        coordinator.asr = providers["asr"]
+        coordinator.diarization = providers["diarization"]
+        coordinator.embedding = providers["embedding"]
+
+    config.save()
+    if config.providers.preload_on_start:
+        from ..app import _startup_preload
+        _startup_preload(request.app)
     return get_config_rt(request)
 
 
@@ -112,7 +161,9 @@ def select_provider(kind: str, payload: ProviderSelect, request: Request):
     if kind == "diarization":
         if hasattr(provider, "unload"):
             provider.unload()
-        provider = create_diarization_provider(payload.model_id)
+        provider = create_diarization_provider(
+            payload.model_id, device=config.providers.device
+        )
         providers[kind] = provider
         coordinator = getattr(request.app.state, "coordinator", None)
         if coordinator is not None:
