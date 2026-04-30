@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { AudioWebSocket, downsampleTo16k } from '../api/websocket'
 import {
   getSystemAudioStream,
@@ -21,10 +22,16 @@ type RecState = 'idle' | 'starting' | 'recording' | 'paused'
 interface UtteranceRowProps {
   utt: Utterance
   isLive?: boolean
-  sessionId?: string | null
+  onIdentify?: (utteranceId: string, contactId: string) => Promise<void>
+  onPickerToggled?: (open: boolean) => void
 }
 
-function UtteranceRow({ utt, isLive = false, sessionId = null }: UtteranceRowProps) {
+const UtteranceRow = memo(function UtteranceRow({
+  utt,
+  isLive = false,
+  onIdentify,
+  onPickerToggled,
+}: UtteranceRowProps) {
   const { t } = useTranslation()
   const { contactById } = useContactsData()
   const contact = contactById(utt.speakerId)
@@ -35,11 +42,11 @@ function UtteranceRow({ utt, isLive = false, sessionId = null }: UtteranceRowPro
   const [candidates, setCandidates] = useState<{ contactId: string; contactName: string; score: number }[]>([])
   const [hasEmbedding, setHasEmbedding] = useState(true)
   const [loading, setLoading] = useState(false)
-  const identifyMutation = useIdentifyUtteranceMutation(sessionId ?? null)
 
   const openPicker = async () => {
     if (!utt.id || utt.id === 'live') return
     setPickerOpen(true)
+    onPickerToggled?.(true)
     setLoading(true)
     setCandidates([])
     try {
@@ -58,11 +65,17 @@ function UtteranceRow({ utt, isLive = false, sessionId = null }: UtteranceRowPro
     }
   }
 
-  const handleIdentify = async (contactId: string) => {
-    if (!utt.id || utt.id === 'live') return
+  const closePicker = useCallback(() => {
     setPickerOpen(false)
-    await identifyMutation.mutateAsync({ utteranceId: utt.id, contactId })
-  }
+    onPickerToggled?.(false)
+  }, [onPickerToggled])
+
+  const handleIdentify = useCallback(async (contactId: string) => {
+    if (!utt.id || utt.id === 'live') return
+    closePicker()
+    await onIdentify?.(utt.id, contactId)
+  }, [utt.id, onIdentify, closePicker])
+
   return (
     <>
     <div data-testid={`utterance-${utt.id}`} style={{ ...csS.uttRow, padding: 'var(--utt-padding, 13px 0)' }}>
@@ -146,12 +159,7 @@ function UtteranceRow({ utt, isLive = false, sessionId = null }: UtteranceRowPro
                 </div>
               )}
             </div>
-            <button
-              onClick={() => {
-                setPickerOpen(false)
-              }}
-              style={csS.identifyCancelBtn}
-            >
+            <button onClick={closePicker} style={csS.identifyCancelBtn}>
               ✕
             </button>
           </>
@@ -160,7 +168,7 @@ function UtteranceRow({ utt, isLive = false, sessionId = null }: UtteranceRowPro
     )}
     </>
   )
-}
+})
 
 interface CurrentSessionProps {
   setRecording: (r: boolean) => void
@@ -238,17 +246,50 @@ export function CurrentSession({
     return window.localStorage?.getItem('vd_capture_system') === '1'
   })
   const systemSupported = isSystemAudioSupported()
+  // Throttle audio level renders: only update state once per ~100ms
+  const micLevelRef = useRef<AudioLevelSnapshot>(SILENCE_SNAPSHOT)
+  const sysLevelRef = useRef<AudioLevelSnapshot>(SILENCE_SNAPSHOT)
+  const levelFrameRef = useRef<number>(0)
 
-  const speakerStats = utterances.reduce<Record<string, SpeakerStat>>((acc, u, idx) => {
-    const k = u.speakerId ?? '__unk__'
-    if (!acc[k]) acc[k] = { speakerId: u.speakerId, ms: 0, order: idx }
-    acc[k].ms += 4500
-    return acc
-  }, {})
-  const totalMs = Object.values(speakerStats).reduce((s, v) => s + v.ms, 0) || 1
-  const unknownInSession = utterances.filter(
-    (u) => !u.speakerId && u.speakerSegmentId !== undefined,
-  ).length
+  const identifyMutation = useIdentifyUtteranceMutation(sessionId)
+  const onIdentify = useCallback(
+    async (uttId: string, contactId: string) => {
+      await identifyMutation.mutateAsync({ utteranceId: uttId, contactId })
+    },
+    [identifyMutation],
+  )
+
+  // ---- virtualized utterance list ------------------------------------
+
+  const rowVirtualizer = useVirtualizer({
+    count: utterances.length,
+    getScrollElement: useCallback(() => transcriptRef.current, []),
+    estimateSize: () => 120,
+    overscan: 3,
+  })
+
+  const onPickerToggled = useCallback(() => {
+    // Force virtualizer to re-measure after picker opens/closes
+    requestAnimationFrame(() => {
+      rowVirtualizer.measure()
+    })
+  }, [rowVirtualizer])
+
+  // ---- memoized stats (avoids O(n) compute on audio-level re-renders) --
+
+  const { speakerStats, totalMs, unknownInSession } = useMemo(() => {
+    const stats = utterances.reduce<Record<string, SpeakerStat>>((acc, u, idx) => {
+      const k = u.speakerId ?? '__unk__'
+      if (!acc[k]) acc[k] = { speakerId: u.speakerId, ms: 0, order: idx }
+      acc[k].ms += 4500
+      return acc
+    }, {})
+    const total = Object.values(stats).reduce((s, v) => s + v.ms, 0) || 1
+    const unknown = utterances.filter(
+      (u) => !u.speakerId && u.speakerSegmentId !== undefined,
+    ).length
+    return { speakerStats: stats, totalMs: total, unknownInSession: unknown }
+  }, [utterances])
 
   useEffect(() => {
     if (recState === 'recording') {
@@ -260,11 +301,27 @@ export function CurrentSession({
   }, [recState])
 
   useEffect(() => {
-    if (transcriptRef.current)
-      transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight
-  }, [utterances, showLive])
+    if (showLive && transcriptRef.current) {
+      rowVirtualizer.scrollToIndex(utterances.length - 1, { align: 'end' })
+    }
+  }, [utterances, showLive, rowVirtualizer])
+
+  const _scheduleLevelUpdate = useCallback(() => {
+    if (levelFrameRef.current) return
+    levelFrameRef.current = requestAnimationFrame(() => {
+      levelFrameRef.current = 0
+      setMicLevel(micLevelRef.current)
+      setSystemLevel(sysLevelRef.current)
+    })
+  }, [])
 
   const stopAudio = () => {
+    if (levelFrameRef.current) {
+      cancelAnimationFrame(levelFrameRef.current)
+      levelFrameRef.current = 0
+    }
+    micLevelRef.current = SILENCE_SNAPSHOT
+    sysLevelRef.current = SILENCE_SNAPSHOT
     setMicLevel(SILENCE_SNAPSHOT)
     setSystemLevel(SILENCE_SNAPSHOT)
     try {
@@ -346,7 +403,8 @@ export function CurrentSession({
     sysProcessorRef.current = processor
     processor.onaudioprocess = (e) => {
       const f32 = e.inputBuffer.getChannelData(0)
-      setSystemLevel(measureAudioLevel(f32))
+      sysLevelRef.current = measureAudioLevel(f32)
+      _scheduleLevelUpdate()
       const chunk = actualRate === 16000 ? f32 : downsampleTo16k(f32, actualRate)
       sysWs.sendPCMChunk(chunk.buffer as ArrayBuffer)
     }
@@ -423,7 +481,8 @@ export function CurrentSession({
 
       processor.onaudioprocess = (e) => {
         const f32 = e.inputBuffer.getChannelData(0)
-        setMicLevel(measureAudioLevel(f32))
+        micLevelRef.current = measureAudioLevel(f32)
+        _scheduleLevelUpdate()
         const chunk = actualRate === 16000 ? f32 : downsampleTo16k(f32, actualRate)
         ws.sendPCMChunk(chunk.buffer as ArrayBuffer)
       }
@@ -587,7 +646,25 @@ export function CurrentSession({
               <div style={csS.emptySub}>{t('currentSession.emptySub')}</div>
             </div>
           )}
-          {utterances.map((u) => <UtteranceRow key={u.id} utt={u} sessionId={sessionId} />)}
+          <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative', flexShrink: 0 }}>
+            {rowVirtualizer.getVirtualItems().map((v) => {
+              const u = utterances[v.index]
+              return (
+                <div
+                  key={v.key}
+                  data-index={v.index}
+                  ref={rowVirtualizer.measureElement}
+                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${v.start}px)` }}
+                >
+                  <UtteranceRow
+                    utt={u}
+                    onIdentify={onIdentify}
+                    onPickerToggled={onPickerToggled}
+                  />
+                </div>
+              )
+            })}
+          </div>
           {showLive && (
             <UtteranceRow
               utt={{ id: 'live', speakerId: null, time: fmt(elapsed), text: '' }}
