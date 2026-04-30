@@ -149,27 +149,31 @@ class QueueRepo:
     def delete_many(self, queue_ids: list[str]) -> int:
         """Hard-delete queue rows, their speaker_segments, and linked utterances."""
         placeholders = ", ".join("?" for _ in queue_ids)
-        # Delete utterances linked to these speaker_segments
+        # 1. Delete utterances linked to these speaker_segments
         self.conn.execute(
             f"DELETE FROM utterances WHERE speaker_segment_id IN ("
             f"SELECT speaker_segment_id FROM unknown_queue WHERE id IN ({placeholders})"
             f")",
             queue_ids,
         )
-        # Delete speaker_segments
-        self.conn.execute(
-            f"DELETE FROM speaker_segments WHERE id IN ("
-            f"SELECT speaker_segment_id FROM unknown_queue WHERE id IN ({placeholders})"
-            f")",
+        # 2. Capture speaker_segment_ids before deleting queue rows
+        rows = self.conn.execute(
+            f"SELECT speaker_segment_id FROM unknown_queue WHERE id IN ({placeholders})",
             queue_ids,
-        )
-        # Delete queue rows
+        ).fetchall()
+        segment_ids = [r["speaker_segment_id"] for r in rows]
+        # 3. Delete queue rows (FK → speaker_segments)
         cur = self.conn.execute(
             f"DELETE FROM unknown_queue WHERE id IN ({placeholders})",
             queue_ids,
         )
+        deleted = cur.rowcount
+        # 4. Delete speaker_segments (no more FK references from queue or utterances)
+        if segment_ids:
+            sp = ", ".join("?" for _ in segment_ids)
+            self.conn.execute(f"DELETE FROM speaker_segments WHERE id IN ({sp})", segment_ids)
         self.conn.commit()
-        return cur.rowcount
+        return deleted
 
     def get(self, queue_id: str) -> Optional[dict]:
         cur = self.conn.execute(
