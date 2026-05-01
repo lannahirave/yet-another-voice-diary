@@ -1,6 +1,7 @@
 """FastAPI dependency injection — per-request DB connections and shared singletons."""
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
@@ -10,6 +11,8 @@ from fastapi import Depends, Request, WebSocket
 if TYPE_CHECKING:
     from ..config import BackendConfig
     from ..pipeline.coordinator import PipelineCoordinator
+
+log = logging.getLogger(__name__)
 
 
 def _app_state(request: Request = None, websocket: WebSocket = None):
@@ -46,8 +49,8 @@ def get_db(
     conn.execute("PRAGMA foreign_keys = ON")
     try:
         conn.execute("PRAGMA journal_mode=WAL")
-    except Exception:
-        pass
+    except sqlite3.OperationalError:
+        log.warning("WAL mode unavailable; using default journal (concurrent readers may block)")
     try:
         yield conn
     finally:

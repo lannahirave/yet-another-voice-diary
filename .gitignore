@@ -22,3 +22,9 @@ voice_diary_backend.egg-info
 .run-logs
 .playwright-mcp
 backend/pretrained_models
+
+# IDE
+.idea
+.tmp-debug-test*
+/backend/backend/pretrained_models
+/backend/backend/voice_diary.db

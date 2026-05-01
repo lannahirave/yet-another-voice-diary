@@ -220,7 +220,7 @@ uttList.innerHTML+=`
 <div class="utt-time">${{fmtMs(u.started_ms)}}<br>${{u.duration_ms}}ms</div>
 <div>
 ${{srcLabel}}${{langLabel}}
-${{wavSrc?`<details><summary>waveform</summary><div class="waveform-container"><svg id="wav-${{i}}" width="100%" height="44" style="display:block;border-radius:3px"></svg></div><audio controls style="width:100%;height:28px;margin-top:4px" src="${{wavSrc}}"></audio></details>`:''}}
+${{wavSrc?`<details><summary>waveform</summary><div class="waveform-container"><svg id="wav-${{i}}" width="100%" height="44" style="display:block;border-radius:3px"></svg></div><audio controls style="width:100%;height:28px;margin-top:4px" src="${{wavSrc}}" type="audio/wav" preload="none"></audio></details>`:''}}
 <div class="utt-text">${{u.transcript||'(silence)'}}</div>
 ${{segHtml?`<details style="margin-top:6px"><summary>${{spkSegs.length}} speaker segment${{spkSegs.length!==1?'s':''}}</summary><table class="seg-table"><tr><th>ID</th><th>Contact</th><th>Speaker</th><th>Model</th></tr>${{segHtml}}</table></details>`:''}}
 </div></div>`;

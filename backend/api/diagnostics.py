@@ -133,7 +133,7 @@ class DebugSession:
             "confidence": confidence,
             "source": source,
             "speaker_segments": serializable_segments,
-            "waveform_file": str(wav_rel).replace("\\", "/"),
+            "waveform_file": (self.output_dir / wav_rel).resolve().as_uri(),
         }
 
         self.utterances.append(meta)
