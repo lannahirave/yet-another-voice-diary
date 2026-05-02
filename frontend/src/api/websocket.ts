@@ -121,7 +121,8 @@ export class AudioWebSocket {
   stop() {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'stop' }))
-      this.ws.close()
+      // Don't close — backend flushes the last buffered utterance
+      // (which can take seconds of ASR inference), then closes itself.
     }
     this.ws = null
   }

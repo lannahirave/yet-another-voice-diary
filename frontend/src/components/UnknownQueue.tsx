@@ -25,7 +25,7 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedQ, setDebouncedQ] = useState('')
   const [sessionFilter, setSessionFilter] = useState<string>('all')
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const resolvedSessionId =
     sessionFilter === 'all' ? null : sessionFilter === 'current' ? currentSessionId : sessionFilter
@@ -52,7 +52,7 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
 
   // Debounce search input to avoid hammering the backend
   useEffect(() => {
-    clearTimeout(debounceRef.current)
+    clearTimeout(debounceRef.current ?? undefined)
     if (!searchQuery.trim()) {
       setDebouncedQ('')
       setOffset(0)
@@ -62,7 +62,7 @@ export function UnknownQueue({ onApplyLiveResolution, currentSessionId = null }:
       setDebouncedQ(searchQuery.trim())
       setOffset(0)
     }, 300)
-    return () => clearTimeout(debounceRef.current)
+    return () => clearTimeout(debounceRef.current ?? undefined)
   }, [searchQuery])
 
   // Reset offset when session filter changes
