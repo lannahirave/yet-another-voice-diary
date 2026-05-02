@@ -9,7 +9,6 @@ frontend/.vite
 
 # Python
 __pycache__
-*.pyc
 .pytest_cache
 .venv
 .venv-ml
@@ -28,3 +27,8 @@ backend/pretrained_models
 .tmp-debug-test*
 /backend/backend/pretrained_models
 /backend/backend/voice_diary.db
+.temp-docs
+*.log
+*.pid
+backend/voice_diary.db-wal
+backend/voice_diary.db-shm
