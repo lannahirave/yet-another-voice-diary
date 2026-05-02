@@ -29,7 +29,22 @@ def _is_unloaded_speechbrain_lazy_module(value: object) -> bool:
 
 
 def _remove_speechbrain_optional_lazy_imports() -> None:
-    """Avoid SpeechBrain optional lazy imports breaking model imports."""
+    """Remove unloaded SpeechBrain lazy modules from ``sys.modules``.
+
+    SpeechBrain registers optional integrations (k2, etc.) as lazy module
+    objects. On Windows, ``inspect.getframeinfo().filename`` uses backslashes
+    so SpeechBrain's own ``/inspect.py`` guard does not match, and those lazy
+    modules can be accidentally imported when Lightning/Torch calls
+    ``inspect`` during PyAnnote or NeMo loading. Once touched, a broken k2
+    wheel that installed without the native ``_k2`` C extension raises
+    ``ModuleNotFoundError`` and kills the import.
+
+    This function strips those lazy modules before they can be triggered.
+    Only needed on Windows — on Linux/macOS forward-slashed paths match the
+    guard and the lazy modules stay dormant.
+
+    Safe to call when SpeechBrain is not yet imported (no-op).
+    """
     for module_name, module in list(sys.modules.items()):
         if (
             module_name.startswith("speechbrain.")
@@ -50,7 +65,15 @@ def _remove_speechbrain_optional_lazy_imports() -> None:
 
 
 def _called_from_inspect_py() -> bool:
-    """Return True when a lazy import was triggered by Python inspect internals."""
+    """Return True when a lazy import was triggered by Python inspect internals.
+
+    Walk the call stack looking for a frame originating from ``inspect.py``.
+    This is the Windows-safe replacement for SpeechBrain's own guard which
+    uses ``inspect.getframeinfo()`` — that function returns backslash paths
+    on Windows so the ``"/inspect.py"`` suffix check never matches. By walking
+    frames directly and normalizing slashes ourselves, we correctly detect
+    inspect-originated calls on all platforms.
+    """
     frame = sys._getframe(1)
     while frame is not None:
         filename = frame.f_code.co_filename.replace("\\", "/")
@@ -79,7 +102,22 @@ def _ensure_lightning_utilities() -> None:
 
 
 def _install_speechbrain_windows_inspect_patch() -> bool:
-    """Install a process-wide Windows fix for SpeechBrain lazy imports."""
+    """Monkey-patch SpeechBrain's ``LazyModule.ensure_module`` process-wide.
+
+    SpeechBrain 1.1 has a guard in ``ensure_module`` that refuses to load
+    lazy optional integrations (like k2) when called from ``inspect``.
+    The guard checks ``inspect.getframeinfo().filename.endswith("/inspect.py")``
+    which fails on Windows because ``getframeinfo`` returns backslash paths.
+
+    Our replacement uses ``_called_from_inspect_py()`` which walks the
+    call-stack frames directly and normalizes slashes, correctly detecting
+    inspect-originated calls on Windows. When the caller IS inspect, we
+    raise ``AttributeError`` — matching SpeechBrain's own behavior.
+
+    The patch is idempotent (checks for the ``_voice_diary_windows_inspect_compat``
+    sentinel) and permanent — it is NOT reverted because every subsequent
+    PyAnnote/NeMo model interaction on Windows may trigger lazy modules.
+    """
     try:
         from speechbrain.utils import importutils  # type: ignore[import-untyped]
     except Exception:

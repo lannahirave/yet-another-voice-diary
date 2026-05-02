@@ -67,6 +67,17 @@ def _verify_device_normalization() -> None:
 
 
 def _warn_k2() -> None:
+    """Warn when k2 is installed — it can break NeMo/PyAnnote imports on Windows.
+
+    SpeechBrain registers k2 as a lazy optional integration. On Windows,
+    SpeechBrain's guard against importing lazy modules during inspect calls
+    fails because ``inspect.getframeinfo()`` returns backslash paths that
+    don't match ``"/inspect.py"``. When Lightning/Torch calls inspect during
+    NeMo or PyAnnote loading, the lazy k2 module gets touched. If k2 was
+    installed from a native Windows wheel that lacks the ``_k2`` C extension,
+    this raises ``ModuleNotFoundError`` and kills the import. Voice Diary
+    does not use k2 at all — it should not be installed.
+    """
     if importlib.util.find_spec("k2") is not None:
         _print(
             "WARNING: optional package k2 is installed. Voice Diary does not need it "

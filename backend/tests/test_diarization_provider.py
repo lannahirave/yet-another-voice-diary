@@ -104,6 +104,12 @@ def test_nemo_sortformer_load_fails_with_actionable_message(monkeypatch):
 
 
 def test_speechbrain_windows_inspect_compat_ignores_inspect_callers(monkeypatch):
+    """Verify the inspect guard prevents lazy module loading from inspect-originated calls.
+
+    Uses ``k2_integration`` as the module name because k2 is the canonical
+    real-world example of a SpeechBrain optional integration that breaks on
+    Windows when accidentally loaded (see ``_remove_speechbrain_optional_lazy_imports``).
+    """
     pytest.importorskip("speechbrain")
     from speechbrain.utils import importutils
 

@@ -64,6 +64,11 @@ if !errorlevel! neq 0 (
     exit /b 1
 )
 
+REM k2 is a SpeechBrain optional integration for ASR lattice decoding.
+REM On Windows, SpeechBrain's lazy-import guard fails (backslash paths
+REM don't match "/inspect.py"), so k2 can be accidentally imported during
+REM NeMo loading. Broken native Windows k2 wheels install without the
+REM _k2 C extension and raise ModuleNotFoundError. Remove if present.
 echo Removing optional k2 package if pip resolved it...
 uv pip uninstall k2 --python .venv-ml\Scripts\python.exe >nul 2>nul
 
