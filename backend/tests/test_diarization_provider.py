@@ -87,10 +87,13 @@ def test_create_diarization_provider_returns_expected_backend():
 def test_nemo_sortformer_load_fails_with_actionable_message(monkeypatch):
     provider = NeMoSortformerDiarizationProvider()
 
-    def fail_import(_name: str):
+    def fail_import():
         raise ModuleNotFoundError("No module named 'nemo'")
 
-    monkeypatch.setattr("backend.providers.diarization.importlib.import_module", fail_import)
+    monkeypatch.setattr(
+        "backend.providers.diarization.import_nemo_sortformer_class",
+        fail_import,
+    )
 
     with pytest.raises(RuntimeError, match=r"\.\[ml-nemo\]"):
         provider.load()
@@ -110,12 +113,9 @@ def test_speechbrain_windows_inspect_compat_ignores_inspect_callers(monkeypatch)
         None,
     )
 
-    def fake_getframeinfo(_frame):
-        return type("FrameInfo", (), {"filename": r"C:\Python311\Lib\inspect.py"})()
-
     monkeypatch.setattr(
-        "backend.providers.diarization.inspect.getframeinfo",
-        fake_getframeinfo,
+        "backend.providers.diarization._called_from_inspect_py",
+        lambda: True,
     )
 
     with _speechbrain_windows_inspect_compat():

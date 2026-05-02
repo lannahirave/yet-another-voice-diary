@@ -28,9 +28,12 @@ dev = [
 # before `pip install -e ".[ml]"`. Keep this on the torch 2.8 line because
 # `pyannote.audio==4.0.3` and the current SpeechBrain/PyAnnote stack in
 # `web_app` do not install cleanly against newer torch 2.11 wheels.
+# Do not include k2 on native Windows. SpeechBrain exposes k2 as an optional
+# lazy integration, but Windows wheels can install without the native _k2 module
+# and break unrelated NeMo/PyAnnote imports.
 ml = [
   "faster-whisper>=1.2",
-  "transformers>=4.40",
+  "transformers>=4.40,<5",
   "accelerate>=0.28",
   "silero-vad>=5.1",
   "torch==2.8.0",
@@ -40,7 +43,8 @@ ml = [
   "pyannote.audio==4.0.3",
 ]
 ml-nemo = [
-  "nemo_toolkit[asr]",
+  "cython",
+  "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@main",
 ]
 
 # This pyproject sits inside the `backend` package itself. List subpackages

@@ -46,35 +46,38 @@ Electron (Node 20, frontend/)
 
 - Python 3.11+
 - Node 20+
-- (optional) CUDA-capable GPU for faster ASR
+- uv
+- ffmpeg on `PATH` for NeMo Sortformer diarization
+- (optional) CUDA-capable NVIDIA GPU for faster ASR/diarization
 
 ## Quick start
 
-```bash
-# 1. Install Python deps (from web_app/backend)
-cd web_app/backend
-pip install -e ".[dev]"          # ~20 MB — no ML models
-# pip install -e ".[ml]"         # ~3 GB — includes faster-whisper + torch
+Windows uses a unified installer. It creates `.venv-ml`, installs backend ML/dev
+dependencies with `uv`, installs CUDA Torch wheels when NVIDIA CUDA is detected,
+installs NeMo Sortformer by default, installs frontend dependencies with
+`npm ci` when the lockfile exists, seeds the dev DB, and verifies imports.
 
-# 2. Seed dev database with sample Ukrainian content (from web_app)
-cd web_app
-python -X utf8 backend/scripts/seed_dev_db.py
-
-# 3. Install Node deps (from web_app/frontend)
-cd web_app/frontend
-npm install
-
-# 4a. Run just the web UI + backend
-cd web_app
-python -m backend.run &          # starts FastAPI on :8765
-cd frontend
-npm run dev                      # Vite on :5173
-
-# 4b. Run the full Electron app
-cd web_app/frontend
-npm run electron:compile         # compile electron/main.ts → dist-electron/
-npm run electron:dev             # starts Electron (which spawns Python + loads Vite)
+```bat
+cd D:\web_app
+scripts\install.bat
+cd frontend && npm run electron:dev
 ```
+
+Useful installer modes:
+
+```bat
+scripts\install.bat --cpu             REM Force CPU-only PyTorch
+scripts\install.bat --no-nemo         REM Skip NeMo Sortformer dependencies
+scripts\install.bat --skip-frontend   REM Skip npm dependency installation
+scripts\install.bat --skip-seed       REM Skip dev DB seed
+scripts\install-nemo.bat              REM Add NeMo to an existing .venv-ml
+```
+
+Electron starts the backend through `frontend/electron/python-manager.ts`, which
+prefers `D:\web_app\.venv-ml\Scripts\python.exe`. If Sortformer fails with
+`ModuleNotFoundError: No module named 'nemo'`, the active `.venv-ml` does not
+have NeMo installed; run `scripts\install-nemo.bat` or rerun
+`scripts\install.bat`.
 
 ## CUDA-enabled PyTorch
 
@@ -93,14 +96,12 @@ Use this CUDA-enabled stack in `web_app`:
 - `torchvision 0.23.0+cu126`
 
 `web_app` had CPU-only Torch installs, so it stayed on CPU. To make `web_app` use
-CUDA, install the PyTorch `cu126` wheels first, then install the rest of the ML deps:
+CUDA, use the Windows installer. It detects CUDA 12.x/13.x drivers and installs
+the PyTorch `cu126` wheels:
 
-```bash
-cd web_app/backend
-python -m pip uninstall -y torch torchaudio torchvision
-python -m pip install --index-url https://download.pytorch.org/whl/cu126 torch==2.8.0 torchaudio==2.8.0 torchvision==0.23.0
-python -m pip install -e ".[ml]"
-python -X utf8 -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.version.cuda)"
+```bat
+scripts\install.bat
+.venv-ml\Scripts\python.exe -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.version.cuda)"
 ```
 
 ## API overview
@@ -160,11 +161,11 @@ cd frontend && npm run typecheck      # tsc --noEmit
 # the DB, plus best-score-per-profile for every unresolved segment in the
 # unknown queue. Use this to pick speaker_identification_threshold from
 # real data instead of guessing.
-.venv/Scripts/python -m backend.scripts.score_histogram backend/voice_diary.db
+.venv-ml/Scripts/python -m backend.scripts.score_histogram backend/voice_diary.db
 
 # Clear-DB: wipe all user rows from the dev SQLite DB while preserving
 # schema, indexes, and FTS shadow. Confirms before deleting unless --yes.
-.venv/Scripts/python -m backend.scripts.clear_db --yes
+.venv-ml/Scripts/python -m backend.scripts.clear_db --yes
 ```
 
 ## Voiceprint confidence

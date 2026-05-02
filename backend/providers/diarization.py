@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from contextlib import contextmanager, nullcontext
 import importlib
-import inspect
 import logging
 from types import ModuleType
 import sys
@@ -13,6 +12,7 @@ import warnings
 import numpy as np
 
 from ..config import normalize_diarization_model_id
+from .devices import normalize_indexed_cuda_device
 
 log = logging.getLogger(__name__)
 SORTFORMER_V21_MODEL_ID = "sortformer-v2.1"
@@ -29,7 +29,7 @@ def _is_unloaded_speechbrain_lazy_module(value: object) -> bool:
 
 
 def _remove_speechbrain_optional_lazy_imports() -> None:
-    """Avoid SpeechBrain optional lazy imports breaking PyAnnote imports."""
+    """Avoid SpeechBrain optional lazy imports breaking model imports."""
     for module_name, module in list(sys.modules.items()):
         if (
             module_name.startswith("speechbrain.")
@@ -37,13 +37,27 @@ def _remove_speechbrain_optional_lazy_imports() -> None:
         ):
             sys.modules.pop(module_name, None)
 
-    speechbrain = sys.modules.get("speechbrain")
-    if speechbrain is None:
-        return
+    for module_name, module in list(sys.modules.items()):
+        if not (
+            module_name == "speechbrain" or module_name.startswith("speechbrain.")
+        ):
+            continue
+        if not hasattr(module, "__dict__"):
+            continue
+        for name, value in list(vars(module).items()):
+            if _is_unloaded_speechbrain_lazy_module(value):
+                vars(module).pop(name, None)
 
-    for name, value in list(vars(speechbrain).items()):
-        if _is_unloaded_speechbrain_lazy_module(value):
-            vars(speechbrain).pop(name, None)
+
+def _called_from_inspect_py() -> bool:
+    """Return True when a lazy import was triggered by Python inspect internals."""
+    frame = sys._getframe(1)
+    while frame is not None:
+        filename = frame.f_code.co_filename.replace("\\", "/")
+        if filename.endswith("/inspect.py"):
+            return True
+        frame = frame.f_back
+    return False
 
 
 def _ensure_lightning_utilities() -> None:
@@ -64,6 +78,41 @@ def _ensure_lightning_utilities() -> None:
         pass
 
 
+def _install_speechbrain_windows_inspect_patch() -> bool:
+    """Install a process-wide Windows fix for SpeechBrain lazy imports."""
+    try:
+        from speechbrain.utils import importutils  # type: ignore[import-untyped]
+    except Exception:
+        return False
+
+    current: Callable[[Any, int], ModuleType] = importutils.LazyModule.ensure_module
+    if getattr(current, "_voice_diary_windows_inspect_compat", False):
+        return True
+
+    def ensure_module(self: Any, stacklevel: int) -> ModuleType:
+        if _called_from_inspect_py():
+            raise AttributeError()
+
+        lazy_module = getattr(self, "lazy_module", None)
+        if lazy_module is None:
+            try:
+                package = getattr(self, "package", None)
+                target = getattr(self, "target")
+                if package is None:
+                    lazy_module = importlib.import_module(target)
+                else:
+                    lazy_module = importlib.import_module(f".{target}", package)
+                self.lazy_module = lazy_module
+            except Exception as exc:
+                raise ImportError(f"Lazy import of {repr(self)} failed") from exc
+
+        return lazy_module
+
+    setattr(ensure_module, "_voice_diary_windows_inspect_compat", True)
+    importutils.LazyModule.ensure_module = ensure_module
+    return True
+
+
 @contextmanager
 def _speechbrain_windows_inspect_compat():
     """
@@ -72,39 +121,10 @@ def _speechbrain_windows_inspect_compat():
     SpeechBrain 1.1 guards against accidental optional imports from inspect.py,
     but its path check only matches "/inspect.py". On Windows, inspect reports
     backslash paths, so optional redirects such as k2 can be imported while
-    Lightning calls inspect.stack() during PyAnnote model loading.
+    Lightning/Torch call inspect during PyAnnote or NeMo loading.
     """
-    try:
-        from speechbrain.utils import importutils  # type: ignore[import-untyped]
-    except Exception:
-        yield
-        return
-
-    original: Callable[[Any, int], ModuleType] = importutils.LazyModule.ensure_module
-    if getattr(original, "_voice_diary_windows_inspect_compat", False):
-        yield
-        return
-
-    def ensure_module(self: Any, stacklevel: int) -> ModuleType:
-        importer_frame = None
-        try:
-            importer_frame = inspect.getframeinfo(sys._getframe(stacklevel + 1))
-        except AttributeError:
-            pass
-
-        if importer_frame is not None:
-            normalized = importer_frame.filename.replace("\\", "/")
-            if normalized.endswith("/inspect.py"):
-                raise AttributeError()
-
-        return original(self, stacklevel)
-
-    setattr(ensure_module, "_voice_diary_windows_inspect_compat", True)
-    importutils.LazyModule.ensure_module = ensure_module
-    try:
-        yield
-    finally:
-        importutils.LazyModule.ensure_module = original
+    _install_speechbrain_windows_inspect_patch()
+    yield
 
 
 @contextmanager
@@ -145,6 +165,26 @@ def _suppress_unused_pyannote_torchcodec_warning():
             category=UserWarning,
         )
         yield
+
+
+def import_nemo_sortformer_class() -> Any:
+    """Import NeMo Sortformer in the same process as SpeechBrain safely.
+
+    SpeechBrain registers optional integrations as lazy modules. On Windows,
+    Lightning/Torch imports triggered by NeMo can call Python ``inspect``,
+    which touches those lazy modules and can try to import the optional k2
+    integration even though this app does not use it.
+    """
+    _install_speechbrain_windows_inspect_patch()
+    _remove_speechbrain_optional_lazy_imports()
+    speechbrain_compat = (
+        _speechbrain_windows_inspect_compat()
+        if sys.platform.startswith("win")
+        else nullcontext()
+    )
+    with speechbrain_compat:
+        models_mod = importlib.import_module("nemo.collections.asr.models")
+        return getattr(models_mod, "SortformerEncLabelModel")
 
 
 class DiarizationSegment:
@@ -271,7 +311,7 @@ class PyAnnoteDiarizationProvider:
             log.exception("PyAnnote diarization model load failed")
             raise RuntimeError(self._error) from exc
 
-        resolved_device = self._resolve_device()
+        resolved_device = normalize_indexed_cuda_device(self._resolve_device())
         if resolved_device != "cpu":
             import torch
             self._model = self._model.to(torch.device(resolved_device))
@@ -371,8 +411,7 @@ class NeMoSortformerDiarizationProvider:
             raise RuntimeError(self._error)
 
         try:
-            models_mod = importlib.import_module("nemo.collections.asr.models")
-            sortformer_cls = getattr(models_mod, "SortformerEncLabelModel")
+            sortformer_cls = import_nemo_sortformer_class()
         except Exception as exc:
             self._error = (
                 "NeMo ASR toolkit is not installed. Install backend with "

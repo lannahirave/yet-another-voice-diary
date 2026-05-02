@@ -7,6 +7,8 @@ from typing import Any, Optional
 
 import numpy as np
 
+from .devices import normalize_indexed_cuda_device
+
 log = logging.getLogger(__name__)
 
 
@@ -121,7 +123,7 @@ class ECAPATDNNEmbeddingProvider:
 
         _patch_speechbrain_hf_compat()
 
-        device = self._resolve_device()
+        device = normalize_indexed_cuda_device(self._resolve_device())
         try:
             self._model = SpeakerRecognition.from_hparams(
                 source=model_name,

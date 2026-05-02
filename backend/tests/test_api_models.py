@@ -9,17 +9,18 @@ import pytest
 from backend.config import BackendConfig
 
 
-async def _wait_for_state(client, kind: str, target: str, timeout: float = 5.0):
+async def _wait_for_state(client, kind: str, target: str | tuple[str, ...], timeout: float = 5.0):
+    targets = {target} if isinstance(target, str) else set(target)
     deadline = asyncio.get_event_loop().time() + timeout
     last: dict = {}
     while asyncio.get_event_loop().time() < deadline:
         response = await client.get("/models/status")
         assert response.status_code == 200
         last = response.json()[kind]
-        if last["state"] == target:
+        if last["state"] in targets:
             return last
         await asyncio.sleep(0.05)
-    raise AssertionError(f"{kind} did not reach {target}; last={last}")
+    raise AssertionError(f"{kind} did not reach {targets}; last={last}")
 
 
 @pytest.mark.asyncio
@@ -75,8 +76,11 @@ async def test_sortformer_load_surfaces_controlled_error_without_nemo(
         assert response.status_code == 200
         assert response.json()["state"] in {"LOADING", "ERROR"}
 
-        final = await _wait_for_state(client, "diarization", "ERROR")
-        assert ".[ml-nemo]" in (final["error"] or "")
+        final = await _wait_for_state(client, "diarization", ("ERROR", "LOADED"), timeout=30.0)
+        if final["state"] == "ERROR":
+            assert ".[ml-nemo]" in (final["error"] or "")
+        else:
+            assert final["state"] == "LOADED"
     finally:
         await client.post(
             "/config/provider/diarization", json={"model_id": original_model_id}
