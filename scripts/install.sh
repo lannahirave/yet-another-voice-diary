@@ -201,12 +201,6 @@ echo "  Installing backend with [ml,dev] extras..."
 )
 echo "  [OK] Backend dependencies installed"
 
-# k2 cleanup — only relevant on macOS/Linux if it got pulled in transitively;
-# the [ml] extras no longer include it, but remove if resolved.
-echo "  Removing optional k2 package if pip resolved it..."
-uv pip uninstall k2 --python .venv-ml/bin/python &>/dev/null || true
-echo "  [OK] Optional k2 package cleaned up"
-
 if [ -n "${CUDA_INDEX:-}" ]; then
     echo "  Replacing CPU torch with CUDA build from $CUDA_INDEX..."
     if uv pip install --force-reinstall torch==2.8.0 torchaudio==2.8.0 torchvision==0.23.0 \

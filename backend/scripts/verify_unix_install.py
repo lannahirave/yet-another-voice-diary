@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import sys
 import warnings
 from pathlib import Path
@@ -68,14 +67,6 @@ def _verify_device_normalization() -> None:
     _print("Device normalization: OK")
 
 
-def _warn_k2() -> None:
-    if importlib.util.find_spec("k2") is not None:
-        _print(
-            "WARNING: optional package k2 is installed. Voice Diary does not need it; "
-            "broken k2 wheels can introduce SpeechBrain import noise on some platforms."
-        )
-
-
 def _verify_nemo() -> None:
     from backend.providers.diarization import import_nemo_sortformer_class
 
@@ -97,7 +88,6 @@ def main() -> None:
     _verify_torch(expect_cuda=args.expect_cuda)
     _verify_core_imports()
     _verify_device_normalization()
-    _warn_k2()
     if args.with_nemo:
         _verify_nemo()
 
