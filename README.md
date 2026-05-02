@@ -18,7 +18,7 @@ Electron (Node 20, frontend/)
                   ├── Whisper Large-v3-Turbo  (ASR — faster-whisper, int8/CPU)
                   ├── Silero VAD              (stub — Phase 5)
                   └── ECAPA-TDNN embedding    (stub — Phase 5)
-  └─ loads ───► Vite / React 18 / TypeScript  (127.0.0.1:5173 in dev)
+   └─ loads ───► Vite / React 19 / TypeScript  (127.0.0.1:5173 in dev)
                   ├── AudioContext → ScriptProcessorNode → PCM over WebSocket
                   └── REST: /sessions /contacts /unknown-queue /search /config
 ```
@@ -52,32 +52,47 @@ Electron (Node 20, frontend/)
 
 ## Quick start
 
-Windows uses a unified installer. It creates `.venv-ml`, installs backend ML/dev
-dependencies with `uv`, installs CUDA Torch wheels when NVIDIA CUDA is detected,
-installs NeMo Sortformer by default, installs frontend dependencies with
-`npm ci` when the lockfile exists, seeds the dev DB, and verifies imports.
+The unified installer creates `.venv-ml`, installs backend ML/dev dependencies
+with `uv`, installs CUDA Torch wheels when NVIDIA CUDA is detected, installs
+NeMo Sortformer by default, installs frontend dependencies with `npm ci` when
+the lockfile exists, seeds the dev DB, and verifies imports.
+
+**Windows:**
 
 ```bat
-cd D:\web_app
 scripts\install.bat
 cd frontend && npm run electron:dev
 ```
 
-Useful installer modes:
+**Linux / macOS:**
 
-```bat
-scripts\install.bat --cpu             REM Force CPU-only PyTorch
-scripts\install.bat --no-nemo         REM Skip NeMo Sortformer dependencies
-scripts\install.bat --skip-frontend   REM Skip npm dependency installation
-scripts\install.bat --skip-seed       REM Skip dev DB seed
-scripts\install-nemo.bat              REM Add NeMo to an existing .venv-ml
+```bash
+bash scripts/install.sh
+cd frontend && npm run electron:dev
 ```
 
+Useful installer modes (supported on both platforms):
+
+```bash
+# Windows
+scripts\install.bat --cpu --no-nemo --skip-frontend --skip-seed
+scripts\install-nemo.bat           # Add NeMo to an existing .venv-ml
+
+# Linux / macOS (--nemo flag for Mac, but default includes it)
+bash scripts/install.sh --cpu --no-nemo --skip-frontend --skip-seed
+```
+
+Options:
+- `--cpu` — Force CPU-only PyTorch even when NVIDIA CUDA is present
+- `--no-nemo` — Skip NeMo Sortformer dependencies
+- `--skip-frontend` — Skip npm dependency installation
+- `--skip-seed` — Skip dev DB seed
+
 Electron starts the backend through `frontend/electron/python-manager.ts`, which
-prefers `D:\web_app\.venv-ml\Scripts\python.exe`. If Sortformer fails with
+prefers `web_app/.venv-ml/Scripts/python.exe` (Windows) or
+`web_app/.venv-ml/bin/python` (Unix). If Sortformer fails with
 `ModuleNotFoundError: No module named 'nemo'`, the active `.venv-ml` does not
-have NeMo installed; run `scripts\install-nemo.bat` or rerun
-`scripts\install.bat`.
+have NeMo installed; rerun the installer.
 
 ## CUDA-enabled PyTorch
 
@@ -96,12 +111,17 @@ Use this CUDA-enabled stack in `web_app`:
 - `torchvision 0.23.0+cu126`
 
 `web_app` had CPU-only Torch installs, so it stayed on CPU. To make `web_app` use
-CUDA, use the Windows installer. It detects CUDA 12.x/13.x drivers and installs
+CUDA, use the installer. It detects CUDA 12.x/13.x drivers and installs
 the PyTorch `cu126` wheels:
 
-```bat
+```bash
+# Windows
 scripts\install.bat
 .venv-ml\Scripts\python.exe -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.version.cuda)"
+
+# Linux / macOS
+bash scripts/install.sh
+.venv-ml/bin/python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 ```
 
 ## API overview
@@ -133,7 +153,7 @@ scripts\install.bat
 | `frontend/electron/python-manager.ts` | Starts/stops Python backend subprocess |
 | `frontend/src/api/adapters.ts` | Maps API shapes → frontend domain types |
 | `frontend/src/api/websocket.ts` | `AudioWebSocket` + `downsampleTo16k` |
-| `frontend/src/context/ContactsContext.tsx` | Global contacts cache |
+| `frontend/src/query/client.ts` | TanStack React Query client (stale-while-revalidate) |
 | `backend/api/app.py` | FastAPI factory, CORS, DI |
 | `backend/api/routers/audio_ws.py` | PCM → ASR → utterance events |
 | `backend/providers/asr.py` | Whisper Large-v3-Turbo (CPU int8 / CUDA fp16) |
@@ -141,6 +161,8 @@ scripts\install.bat
 | `backend/scripts/seed_dev_db.py` | Populate DB with sample Ukrainian sessions |
 | `backend/scripts/score_histogram.py` | Diagnose identification — SAME vs DIFF cosine distributions, threshold suggestion |
 | `backend/scripts/clear_db.py` | Wipe user data, preserve schema (child-tables-first + FTS + VACUUM) |
+| `backend/scripts/verify_windows_install.py` | Post-install verification (Windows, CUDA, core imports, NeMo) |
+| `backend/scripts/verify_unix_install.py` | Post-install verification (Linux/macOS, CUDA/MPS, core imports, NeMo) |
 | `backend/identification/resolver.py` | `SpeakerResolver` (cosine match, dedupe by contact) |
 | `backend/storage/contact_repo.py` | Contact CRUD + voiceprint confidence (mean pairwise cosine) |
 | `docs/voice-recognition-review.md` | How embeddings are stored/compared, why matches fail, investigation log |
@@ -149,9 +171,10 @@ scripts\install.bat
 ## Running tests
 
 ```bash
-python -m pytest backend/tests/ -v   # 67 tests
+python -m pytest backend/tests/ -v       # 91 tests
 python -m pytest backend/e2e-tests/ -v   # real-model e2e (needs .venv-ml)
-cd frontend && npm run typecheck      # tsc --noEmit
+cd frontend && npm run typecheck         # tsc --noEmit
+cd frontend && npm run test:unit         # 102 frontend tests
 ```
 
 ## Diagnostics & maintenance scripts
@@ -161,11 +184,17 @@ cd frontend && npm run typecheck      # tsc --noEmit
 # the DB, plus best-score-per-profile for every unresolved segment in the
 # unknown queue. Use this to pick speaker_identification_threshold from
 # real data instead of guessing.
-.venv-ml/Scripts/python -m backend.scripts.score_histogram backend/voice_diary.db
+# Windows:
+.venv-ml\Scripts\python -m backend.scripts.score_histogram backend/voice_diary.db
+# Linux / macOS:
+.venv-ml/bin/python -m backend.scripts.score_histogram backend/voice_diary.db
 
 # Clear-DB: wipe all user rows from the dev SQLite DB while preserving
 # schema, indexes, and FTS shadow. Confirms before deleting unless --yes.
-.venv-ml/Scripts/python -m backend.scripts.clear_db --yes
+# Windows:
+.venv-ml\Scripts\python -m backend.scripts.clear_db --yes
+# Linux / macOS:
+.venv-ml/bin/python -m backend.scripts.clear_db --yes
 ```
 
 ## Voiceprint confidence
