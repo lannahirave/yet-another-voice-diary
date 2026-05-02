@@ -2,11 +2,24 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 
 import pytest
 
 from backend.config import BackendConfig
+
+
+class FakeLoadProvider:
+    def __init__(self) -> None:
+        self.model_id = "fake-model"
+        self._state = "UNLOADED"
+        self._error = None
+        self._model = None
+
+    def load(self) -> None:
+        self._model = object()
+        self._state = "LOADED"
 
 
 async def _wait_for_state(client, kind: str, target: str | tuple[str, ...], timeout: float = 5.0):
@@ -49,6 +62,33 @@ async def test_unknown_model_kind_returns_404(client):
     response = await client.post("/models/missing/unload")
 
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_model_load_logs_success(client, app, caplog):
+    app.state.providers["asr"] = FakeLoadProvider()
+    caplog.set_level(logging.INFO, logger="backend.api.routers.models")
+
+    response = await client.post("/models/asr/load")
+
+    assert response.status_code == 200
+    final = await _wait_for_state(client, "asr", "LOADED")
+    assert final["model_id"] == "fake-model"
+    assert "model loaded kind=asr model_id=fake-model provider=FakeLoadProvider" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_model_load_logs_already_loaded(client, app, caplog):
+    provider = FakeLoadProvider()
+    provider.load()
+    app.state.providers["asr"] = provider
+    caplog.set_level(logging.INFO, logger="backend.api.routers.models")
+
+    response = await client.post("/models/asr/load")
+
+    assert response.status_code == 200
+    assert response.json()["state"] == "LOADED"
+    assert "model load skipped kind=asr model_id=fake-model provider=FakeLoadProvider" in caplog.text
 
 
 @pytest.mark.asyncio

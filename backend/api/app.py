@@ -63,7 +63,7 @@ def _startup_preload(app: FastAPI) -> None:
         load.event.clear()
         thread = threading.Thread(
             target=_run_load,
-            args=(provider, load),
+            args=(kind, provider, load),
             name=f"preload-{kind}",
             daemon=True,
         )

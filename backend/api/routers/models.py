@@ -71,13 +71,17 @@ def _interp_progress(load: _LoadState, provider_state: str) -> float:
 
 
 def _provider_status(kind: str, provider: object) -> ProviderStatus:
-    model_id = getattr(provider, "model_id", None) or getattr(provider, "model_size", "")
+    model_id = _provider_model_id(provider)
     return ProviderStatus(
         kind=kind,
-        model_id=str(model_id or ""),
+        model_id=model_id,
         state=_provider_state(provider),
         error=getattr(provider, "_error", None),
     )
+
+
+def _provider_model_id(provider: object) -> str:
+    return str(getattr(provider, "model_id", None) or getattr(provider, "model_size", "") or "")
 
 
 @router.get("/status", response_model=dict[str, ProviderStatus])
@@ -88,17 +92,28 @@ def model_status(request: Request):
     }
 
 
-def _run_load(provider: object, load: _LoadState) -> None:
+def _run_load(kind: str, provider: object, load: _LoadState) -> None:
     """Body of the background load thread."""
+    started_at = time.monotonic()
+    model_id = _provider_model_id(provider)
     try:
         load.progress = 0.05
-        load.started_at = time.monotonic()
+        load.started_at = started_at
         load.event.clear()
         if hasattr(provider, "load"):
             provider.load()
         elif hasattr(provider, "_load_model"):
             provider._load_model()
         load.progress = 1.0
+        elapsed_ms = (time.monotonic() - started_at) * 1000.0
+        log.info(
+            "model loaded kind=%s model_id=%s provider=%s elapsed_ms=%.2f state=%s",
+            kind,
+            model_id,
+            type(provider).__name__,
+            elapsed_ms,
+            _provider_state(provider),
+        )
     except Exception as exc:
         # Provider already sets _state=ERROR and _error. Make sure progress
         # is non-zero so the SSE consumer can surface the error.
@@ -128,6 +143,12 @@ def load_model(kind: str, request: Request):
             return _provider_status(kind, provider)
         if state == "LOADED":
             load.progress = 1.0
+            log.info(
+                "model load skipped kind=%s model_id=%s provider=%s state=LOADED",
+                kind,
+                _provider_model_id(provider),
+                type(provider).__name__,
+            )
             return _provider_status(kind, provider)
 
         # mark LOADING immediately so concurrent calls observe it
@@ -142,7 +163,7 @@ def load_model(kind: str, request: Request):
 
         thread = threading.Thread(
             target=_run_load,
-            args=(provider, load),
+            args=(kind, provider, load),
             name=f"load-{kind}",
             daemon=True,
         )
