@@ -176,7 +176,8 @@ def import_nemo_sortformer_class() -> Any:
     integration even though this app does not use it.
     """
     _install_speechbrain_windows_inspect_patch()
-    _remove_speechbrain_optional_lazy_imports()
+    if sys.platform.startswith("win"):
+        _remove_speechbrain_optional_lazy_imports()
     speechbrain_compat = (
         _speechbrain_windows_inspect_compat()
         if sys.platform.startswith("win")
@@ -273,7 +274,8 @@ class PyAnnoteDiarizationProvider:
             else self.model_id
         )
         try:
-            _remove_speechbrain_optional_lazy_imports()
+            if sys.platform.startswith("win"):
+                _remove_speechbrain_optional_lazy_imports()
             # lightning 2.4+ lazy-loads subpackages; force-ensure
             # 'utilities' is available as an attribute on lightning.pytorch
             # before pyannote triggers pl_legacy_patch() which accesses
@@ -290,7 +292,8 @@ class PyAnnoteDiarizationProvider:
             raise RuntimeError(self._error) from exc
 
         try:
-            _remove_speechbrain_optional_lazy_imports()
+            if sys.platform.startswith("win"):
+                _remove_speechbrain_optional_lazy_imports()
             _ensure_lightning_utilities()
             speechbrain_compat = (
                 _speechbrain_windows_inspect_compat()
