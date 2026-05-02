@@ -40,7 +40,7 @@ class SpeakerResolver:
     def resolve(
         self,
         speaker_segment: SpeakerSegment,
-        threshold: float = 0.82,
+        threshold: float,
     ) -> Optional[str]:
         """
         Resolve speaker segment to known contact.
