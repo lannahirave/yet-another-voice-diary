@@ -52,7 +52,7 @@ D:\web_app\
 - Migrations are idempotent: check `PRAGMA table_info` before adding columns
 
 ### Frontend (TypeScript/React)
-- React 18 + TypeScript strict mode
+- React 19 + TypeScript strict mode with React Compiler (`babel-plugin-react-compiler`) enabled for automatic memoization
 - State management: TanStack React Query v5 (not Context/useReducer for server state)
 - API layer: `api/client.ts::apiFetch<T>()` wraps all HTTP calls (adds 10s timeout)
 - Adapters in `api/adapters.ts` map API shapes → domain types

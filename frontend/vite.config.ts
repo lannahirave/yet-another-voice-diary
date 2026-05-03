@@ -1,8 +1,13 @@
 import { defineConfig } from 'vitest/config'
-import react from '@vitejs/plugin-react'
+import react, { reactCompilerPreset } from '@vitejs/plugin-react'
+import babel from '@rolldown/plugin-babel'
+
+const reactCompilerBabel = await babel({
+  presets: [reactCompilerPreset({ target: '19' })],
+})
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [reactCompilerBabel, react()],
   server: {
     port: 5173,
     strictPort: true,
