@@ -428,3 +428,12 @@ def test_max_utterance_force_flushes_long_monologue():
     assert len(utterances) >= 2
     total = utterances[-1].ended_ms - utterances[0].started_ms
     assert total >= 600  # all 6 voiced chunks plus trailing chunk are accounted for
+
+
+def test_accelerator_snapshot_reports_cuda_and_mps_sections():
+    snapshot = PipelineCoordinator._accelerator_snapshot()
+
+    assert set(snapshot) == {"cuda", "mps"}
+    assert isinstance(snapshot["cuda"]["available"], bool)
+    assert isinstance(snapshot["mps"]["built"], bool)
+    assert isinstance(snapshot["mps"]["available"], bool)

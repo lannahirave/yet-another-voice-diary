@@ -20,6 +20,18 @@ from ..models import Utterance
 log = logging.getLogger(__name__)
 
 
+def _first_parameter_device(model: Any) -> str:
+    parameters = getattr(model, "parameters", None)
+    if not callable(parameters):
+        return "unavailable:no-parameters"
+    try:
+        return str(next(parameters()).device)
+    except StopIteration:
+        return "unavailable:no-parameters"
+    except Exception as exc:
+        return f"unavailable:{type(exc).__name__}:{exc}"
+
+
 class WhisperASRProvider:
     """Whisper ASR wrapper with lazy model load."""
 
@@ -129,6 +141,10 @@ class WhisperASRProvider:
                 dtype=torch_dtype,
                 low_cpu_mem_usage=True,
             ).to(device)
+            log.info(
+                "TEMP ASR model first parameter device=%s",
+                _first_parameter_device(model),
+            )
             self._model = {
                 "model": model,
                 "processor": processor,

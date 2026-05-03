@@ -110,28 +110,48 @@ class PipelineCoordinator:
                     self._emit("error", {"code": "CALLBACK_FAILURE", "message": str(e)})
 
     @staticmethod
-    def _cuda_memory_snapshot() -> dict[str, Any]:
-        """Return current CUDA memory metrics in MiB when available."""
+    def _accelerator_snapshot() -> dict[str, Any]:
+        """Return current CUDA and MPS runtime metrics when available."""
         try:
             import torch  # type: ignore[import-untyped]
         except Exception:
-            return {"available": False}
-
-        if not torch.cuda.is_available():
-            return {"available": False}
-
-        try:
-            device_idx = torch.cuda.current_device()
             return {
-                "available": True,
-                "device_idx": int(device_idx),
-                "allocated_mib": round(torch.cuda.memory_allocated(device_idx) / (1024 ** 2), 2),
-                "reserved_mib": round(torch.cuda.memory_reserved(device_idx) / (1024 ** 2), 2),
-                "max_allocated_mib": round(torch.cuda.max_memory_allocated(device_idx) / (1024 ** 2), 2),
-                "max_reserved_mib": round(torch.cuda.max_memory_reserved(device_idx) / (1024 ** 2), 2),
+                "cuda": {"available": False},
+                "mps": {"built": False, "available": False},
             }
+
+        cuda: dict[str, Any] = {"available": bool(torch.cuda.is_available())}
+        if cuda["available"]:
+            try:
+                device_idx = torch.cuda.current_device()
+                cuda.update({
+                    "device_idx": int(device_idx),
+                    "allocated_mib": round(torch.cuda.memory_allocated(device_idx) / (1024 ** 2), 2),
+                    "reserved_mib": round(torch.cuda.memory_reserved(device_idx) / (1024 ** 2), 2),
+                    "max_allocated_mib": round(torch.cuda.max_memory_allocated(device_idx) / (1024 ** 2), 2),
+                    "max_reserved_mib": round(torch.cuda.max_memory_reserved(device_idx) / (1024 ** 2), 2),
+                })
+            except Exception as exc:
+                cuda["error"] = str(exc)
+
+        mps_backend = getattr(torch.backends, "mps", None)
+        mps: dict[str, Any] = {
+            "built": bool(mps_backend is not None and mps_backend.is_built()),
+            "available": bool(mps_backend is not None and mps_backend.is_available()),
+        }
+        try:
+            mps_module = getattr(torch, "mps", None)
+            if mps["available"] and mps_module is not None:
+                current_allocated = getattr(mps_module, "current_allocated_memory", None)
+                driver_allocated = getattr(mps_module, "driver_allocated_memory", None)
+                if callable(current_allocated):
+                    mps["allocated_mib"] = round(current_allocated() / (1024 ** 2), 2)
+                if callable(driver_allocated):
+                    mps["driver_allocated_mib"] = round(driver_allocated() / (1024 ** 2), 2)
         except Exception as exc:
-            return {"available": True, "error": str(exc)}
+            mps["error"] = str(exc)
+
+        return {"cuda": cuda, "mps": mps}
 
     def start_session(self, session: RecordingSession):
         """Start a new recording session."""
@@ -276,76 +296,76 @@ class PipelineCoordinator:
             log.error(message, *args)
             uvicorn_log.error(message, *args)
 
-        cuda_before = self._cuda_memory_snapshot()
+        accelerator_before = self._accelerator_snapshot()
         _info(
-            "whisper transcription started key=%s samples=%d duration_ms=%d duration_s=%.3f sample_rate=%d cuda=%s",
+            "whisper transcription started key=%s samples=%d duration_ms=%d duration_s=%.3f sample_rate=%d accelerator=%s",
             processing_key,
             int(len(audio)),
             int(duration_ms),
             float(duration_s),
             int(sample_rate),
-            cuda_before,
+            accelerator_before,
         )
         asr_t0 = time.perf_counter()
         try:
             utterance = self.asr.transcribe(audio, language_hint)
         except Exception as exc:
-            cuda_after_error = self._cuda_memory_snapshot()
+            accelerator_after_error = self._accelerator_snapshot()
             log.exception(
-                "whisper transcription failed key=%s cuda=%s",
+                "whisper transcription failed key=%s accelerator=%s",
                 processing_key,
-                cuda_after_error,
+                accelerator_after_error,
             )
             _error(
-                "whisper transcription failed key=%s cuda=%s error=%s",
+                "whisper transcription failed key=%s accelerator=%s error=%s",
                 processing_key,
-                cuda_after_error,
+                accelerator_after_error,
                 exc,
             )
             errors.append({"code": "ASR_FAILURE", "component": "asr", "message": str(exc)})
             utterance = Utterance(transcript="", language=language_hint, confidence=0.0)
         asr_ms = (time.perf_counter() - asr_t0) * 1000.0
-        cuda_after = self._cuda_memory_snapshot()
+        accelerator_after = self._accelerator_snapshot()
         _info(
-            "whisper transcription finished key=%s utterance_id=%s transcript_chars=%d language=%s confidence=%.3f asr_ms=%.2f cuda=%s",
+            "whisper transcription finished key=%s utterance_id=%s transcript_chars=%d language=%s confidence=%.3f asr_ms=%.2f accelerator=%s",
             processing_key,
             utterance.id,
             len(utterance.transcript or ""),
             utterance.language,
             float(utterance.confidence or 0.0),
             float(asr_ms),
-            cuda_after,
+            accelerator_after,
         )
         if not utterance.transcript.strip():
             return (utterance, [], None), errors
 
         diarized_segments: list[DiarizationSegment] = []
         _info(
-            "diarization started key=%s samples=%d duration_ms=%d cuda=%s",
+            "diarization started key=%s samples=%d duration_ms=%d accelerator=%s",
             processing_key,
             int(len(audio)),
             int(duration_ms),
-            self._cuda_memory_snapshot(),
+            self._accelerator_snapshot(),
         )
         diar_t0 = time.perf_counter()
         try:
             diarized_segments = self.diarization.segment(audio)
             diar_ms = (time.perf_counter() - diar_t0) * 1000.0
             _info(
-                "diarization finished key=%s segments=%d diarization_ms=%.2f cuda=%s",
+                "diarization finished key=%s segments=%d diarization_ms=%.2f accelerator=%s",
                 processing_key,
                 len(diarized_segments),
                 float(diar_ms),
-                self._cuda_memory_snapshot(),
+                self._accelerator_snapshot(),
             )
         except Exception as exc:
             diar_ms = (time.perf_counter() - diar_t0) * 1000.0
             log.exception("diarization failed; continuing with full-utterance embedding")
             _error(
-                "diarization failed key=%s diarization_ms=%.2f cuda=%s error=%s",
+                "diarization failed key=%s diarization_ms=%.2f accelerator=%s error=%s",
                 processing_key,
                 float(diar_ms),
-                self._cuda_memory_snapshot(),
+                self._accelerator_snapshot(),
                 exc,
             )
             errors.append({"code": "DIARIZATION_FAILURE", "component": "diarization", "message": str(exc)})
@@ -364,13 +384,13 @@ class PipelineCoordinator:
         for group_idx, (_speaker, speaker_audio, sample_count) in enumerate(speaker_groups):
             emb_duration_s = (sample_count / sample_rate) if sample_rate > 0 else 0.0
             _info(
-                "embedding started key=%s group_idx=%d speaker=%s samples=%d duration_s=%.3f cuda=%s",
+                "embedding started key=%s group_idx=%d speaker=%s samples=%d duration_s=%.3f accelerator=%s",
                 processing_key,
                 int(group_idx),
                 _speaker,
                 int(sample_count),
                 float(emb_duration_s),
-                self._cuda_memory_snapshot(),
+                self._accelerator_snapshot(),
             )
             emb_t0 = time.perf_counter()
             try:
@@ -379,13 +399,13 @@ class PipelineCoordinator:
                 emb_ms = (time.perf_counter() - emb_t0) * 1000.0
                 log.exception("embedding failed for speaker group; skipping segment")
                 _error(
-                    "embedding failed key=%s group_idx=%d speaker=%s samples=%d embedding_ms=%.2f cuda=%s error=%s",
+                    "embedding failed key=%s group_idx=%d speaker=%s samples=%d embedding_ms=%.2f accelerator=%s error=%s",
                     processing_key,
                     int(group_idx),
                     _speaker,
                     int(sample_count),
                     float(emb_ms),
-                    self._cuda_memory_snapshot(),
+                    self._accelerator_snapshot(),
                     exc,
                 )
                 errors.append({"code": "EMBEDDING_FAILURE", "component": "embedding", "message": str(exc)})
@@ -393,14 +413,14 @@ class PipelineCoordinator:
             emb_ms = (time.perf_counter() - emb_t0) * 1000.0
             emb_dim = int(getattr(embedding, "shape", [0])[-1]) if getattr(embedding, "shape", None) else 0
             _info(
-                "embedding finished key=%s group_idx=%d speaker=%s samples=%d embedding_dim=%d embedding_ms=%.2f cuda=%s",
+                "embedding finished key=%s group_idx=%d speaker=%s samples=%d embedding_dim=%d embedding_ms=%.2f accelerator=%s",
                 processing_key,
                 int(group_idx),
                 _speaker,
                 int(sample_count),
                 int(emb_dim),
                 float(emb_ms),
-                self._cuda_memory_snapshot(),
+                self._accelerator_snapshot(),
             )
             built_segments.append(
                 (

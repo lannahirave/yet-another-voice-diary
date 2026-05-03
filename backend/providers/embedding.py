@@ -12,6 +12,26 @@ from .devices import normalize_indexed_cuda_device
 log = logging.getLogger(__name__)
 
 
+def _first_parameter_device(model: Any) -> str:
+    parameters = getattr(model, "parameters", None)
+    if callable(parameters):
+        try:
+            return str(next(parameters()).device)
+        except StopIteration:
+            return "unavailable:no-parameters"
+        except Exception as exc:
+            return f"unavailable:{type(exc).__name__}:{exc}"
+
+    modules = getattr(model, "mods", None)
+    if modules is not None:
+        for child in getattr(modules, "values", lambda: [])():
+            device = _first_parameter_device(child)
+            if not device.startswith("unavailable:no-parameters"):
+                return device
+
+    return "unavailable:no-parameters"
+
+
 def _suppress_speechbrain_pretrained_deprecation() -> None:
     """Silence SpeechBrain's `speechbrain.pretrained` compatibility warning.
 
@@ -146,6 +166,11 @@ class ECAPATDNNEmbeddingProvider:
                 source=model_name,
                 savedir=f"backend/pretrained_models/{model_name.replace('/', '_')}",
                 run_opts={"device": device},
+            )
+            log.info(
+                "TEMP SpeechBrain embedding model first parameter device=%s resolved_device=%s",
+                _first_parameter_device(self._model),
+                device,
             )
         except Exception as exc:
             self._error = f"failed to load embedding model {model_name}: {exc}"

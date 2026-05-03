@@ -19,6 +19,33 @@ SORTFORMER_V21_MODEL_ID = "sortformer-v2.1"
 SORTFORMER_V21_REPO_ID = "nvidia/diar_streaming_sortformer_4spk-v2.1"
 
 
+def _first_parameter_device(model: Any) -> str:
+    parameters = getattr(model, "parameters", None)
+    if callable(parameters):
+        try:
+            return str(next(parameters()).device)
+        except StopIteration:
+            return "unavailable:no-parameters"
+        except Exception as exc:
+            return f"unavailable:{type(exc).__name__}:{exc}"
+
+    for attr in ("model", "_model", "segmentation", "embedding", "speaker_embedding"):
+        child = getattr(model, attr, None)
+        if child is not None and child is not model:
+            device = _first_parameter_device(child)
+            if not device.startswith("unavailable:no-parameters"):
+                return device
+
+    models = getattr(model, "_models", None)
+    if isinstance(models, dict):
+        for child in models.values():
+            device = _first_parameter_device(child)
+            if not device.startswith("unavailable:no-parameters"):
+                return device
+
+    return "unavailable:no-parameters"
+
+
 def _is_unloaded_speechbrain_lazy_module(value: object) -> bool:
     type_module = type(value).__module__
     return (
@@ -356,6 +383,11 @@ class PyAnnoteDiarizationProvider:
         if resolved_device != "cpu":
             import torch
             self._model = self._model.to(torch.device(resolved_device))
+        log.info(
+            "TEMP PyAnnote model first parameter device=%s resolved_device=%s",
+            _first_parameter_device(self._model),
+            resolved_device,
+        )
 
         self._state = "LOADED"
 
@@ -472,6 +504,11 @@ class NeMoSortformerDiarizationProvider:
                 modules.chunk_right_context = 40
                 modules.fifo_len = 40
                 modules.spkcache_update_period = 300
+            log.info(
+                "TEMP NeMo Sortformer model first parameter device=%s resolved_device=%s",
+                _first_parameter_device(self._model),
+                device,
+            )
         except Exception as exc:
             self._error = f"failed to load diarization model {SORTFORMER_V21_REPO_ID}: {exc}"
             self._state = "ERROR"
