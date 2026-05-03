@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { subscribeModelProgress } from '../api/models'
 import {
+  useBlocklistEnabledMutation,
   useConfigQuery,
   useModelLifecycleMutation,
   usePreloadOnStartMutation,
@@ -357,6 +358,7 @@ export function Settings() {
   const [savingThreshold, setSavingThreshold] = useState(false)
   const [savingUnload, setSavingUnload] = useState(false)
   const [savingPreload, setSavingPreload] = useState(false)
+  const [savingBlocklist, setSavingBlocklist] = useState(false)
   const [modelAction, setModelAction] = useState<ProviderKind | null>(null)
   const [progressByKind, setProgressByKind] = useState<Record<string, number>>({})
 
@@ -366,6 +368,7 @@ export function Settings() {
   const setThresholdMutation = useSetThresholdMutation()
   const unloadAfterStopMutation = useUnloadAfterStopMutation()
   const preloadOnStartMutation = usePreloadOnStartMutation()
+  const blocklistEnabledMutation = useBlocklistEnabledMutation()
   const modelLifecycleMutation = useModelLifecycleMutation()
 
   const config = configQuery.data ?? null
@@ -527,9 +530,23 @@ export function Settings() {
     }
   }
 
+  const commitBlocklistEnabled = async (next: boolean) => {
+    if (!config || savingBlocklist) return
+    setSavingBlocklist(true)
+    setActionError(null)
+    try {
+      await blocklistEnabledMutation.mutateAsync(next)
+    } catch (error) {
+      setActionError(configErrorMessage(error, t('settings.errSaveSetting'), t))
+    } finally {
+      setSavingBlocklist(false)
+    }
+  }
+
   const thresholdControlsDisabled = loadingConfig || !config || savingThreshold
   const unloadAfterStop = config?.unload_models_after_stop ?? false
   const preloadOnStart = config?.preload_on_start ?? false
+  const blocklistEnabled = config?.blocklist_enabled ?? false
   const storage = storageQuery.data ?? null
 
   const renderModelCards = (
@@ -668,6 +685,22 @@ export function Settings() {
                 on={preloadOnStart}
                 onChange={(next) => void commitPreloadOnStart(next)}
                 disabled={loadingConfig || !config || savingPreload}
+              />
+            </div>
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>
+                  {t('settings.blocklistEnabled')}
+                </div>
+                <div style={stS.settingDesc}>
+                  {t('settings.blocklistEnabledDesc')}
+                </div>
+              </div>
+              <Toggle
+                dataTestId="blocklist-toggle"
+                on={blocklistEnabled}
+                onChange={(next) => void commitBlocklistEnabled(next)}
+                disabled={loadingConfig || !config || savingBlocklist}
               />
             </div>
             <Divider />

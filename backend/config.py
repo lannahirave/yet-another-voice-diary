@@ -93,6 +93,9 @@ class PipelineConfig:
     Frees RAM but introduces a 3-10 s warm-up on the next session.
     """
 
+    blocklist_enabled: bool = False
+    """If true, drop Whisper hallucination transcripts (off by default)."""
+
 
 @dataclass
 class ProviderConfig:

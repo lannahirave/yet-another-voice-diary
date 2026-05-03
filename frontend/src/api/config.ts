@@ -27,4 +27,10 @@ export const setPreloadOnStart = (value: boolean) =>
     body: JSON.stringify({ value }),
   })
 
+export const setBlocklistEnabled = (value: boolean) =>
+  apiFetch<ApiConfig>('/config/blocklist', {
+    method: 'POST',
+    body: JSON.stringify({ value }),
+  })
+
 export const getStorageInfo = () => apiFetch<ApiStorageInfo>('/config/storage')

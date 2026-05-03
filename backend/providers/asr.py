@@ -11,6 +11,8 @@ raises and logs the detailed exception instead of returning fake transcripts.
 from __future__ import annotations
 
 import logging
+import re
+from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
@@ -44,6 +46,62 @@ class WhisperASRProvider:
         self._backend: Optional[str] = None
         self._state = "UNLOADED"
         self._error: Optional[str] = None
+
+        # Blocklist fields (set by pipeline coordinator before transcribe)
+        self.blocklist_enabled: bool = False
+        self._blocklists: dict[str, set[str]] = {}
+        self._blocklists_loaded: bool = False
+
+    # ---- blocklist ----
+
+    _BLOCKLIST_DIR = Path(__file__).resolve().parent / "blocklists"
+    _NON_WORD_RE = re.compile(r"[^\w\s]")
+    _WHITESPACE_RE = re.compile(r"\s+")
+
+    @classmethod
+    def _normalize_for_blocklist(cls, text: str) -> str:
+        text = text.lower().strip()
+        text = cls._NON_WORD_RE.sub("", text)
+        text = cls._WHITESPACE_RE.sub(" ", text).strip()
+        return text
+
+    def _load_blocklists(self) -> None:
+        """Lazy-load per-language blocklist files from disk."""
+        if self._blocklists_loaded:
+            return
+        self._blocklists = {}
+        if not self._BLOCKLIST_DIR.is_dir():
+            log.warning("blocklist directory not found: %s", self._BLOCKLIST_DIR)
+            self._blocklists_loaded = True
+            return
+        for filepath in self._BLOCKLIST_DIR.glob("*.txt"):
+            lang = filepath.stem.lower()
+            phrases = {
+                line.strip()
+                for line in filepath.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            }
+            if phrases:
+                self._blocklists[lang] = phrases
+        self._blocklists_loaded = True
+        total = sum(len(v) for v in self._blocklists.values())
+        log.info(
+            "blocklist loaded phrases=%d languages=%d",
+            total, len(self._blocklists),
+        )
+
+    def _is_blocked(self, text: str, lang: str | None) -> bool:
+        """Return True when the transcript matches a blocklist entry."""
+        if not self._blocklists_loaded:
+            self._load_blocklists()
+        lang_code = (lang or "en").lower()
+        blocklist = self._blocklists.get(lang_code)
+        if blocklist is None:
+            blocklist = self._blocklists.get("en", set())
+            if not blocklist:
+                return False
+        normal = self._normalize_for_blocklist(text)
+        return normal in blocklist
 
     # ---- model lifecycle ----
 
@@ -215,13 +273,36 @@ class WhisperASRProvider:
             )
             segments = list(segments_iter)
             text = " ".join(s.text.strip() for s in segments if s.text).strip()
+            detected_lang: Optional[str] = info.language
+            confidence = float(info.language_probability or 0.0)
+
+            if self.blocklist_enabled and text:
+                if self._is_blocked(text, detected_lang):
+                    log.info(
+                        "whisper blocklist dropped language=%s text=%r",
+                        detected_lang, text,
+                    )
+                    return Utterance(
+                        transcript="", language=detected_lang, confidence=0.0,
+                    )
+
             return Utterance(
                 transcript=text,
-                language=info.language,
-                confidence=float(info.language_probability or 0.0),
+                language=detected_lang,
+                confidence=confidence,
             )
 
         text = self._transcribe_transformers(audio, language_hint)
+
+        if self.blocklist_enabled and text.strip():
+            if self._is_blocked(text.strip(), language_hint):
+                log.info(
+                    "whisper blocklist dropped language=%s text=%r",
+                    language_hint, text.strip(),
+                )
+                return Utterance(
+                    transcript="", language=language_hint, confidence=0.0,
+                )
 
         return Utterance(
             transcript=text,

@@ -288,6 +288,8 @@ class PipelineCoordinator:
         )
         asr_t0 = time.perf_counter()
         try:
+            if hasattr(self.asr, "blocklist_enabled"):
+                self.asr.blocklist_enabled = self.config.blocklist_enabled
             utterance = self.asr.transcribe(audio, language_hint)
         except Exception as exc:
             cuda_after_error = self._cuda_memory_snapshot()

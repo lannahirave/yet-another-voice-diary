@@ -3,6 +3,7 @@ import {
   getConfig,
   getStorageInfo,
   selectProvider,
+  setBlocklistEnabled,
   setPreloadOnStart,
   setThreshold,
   setUnloadAfterStop,
@@ -60,6 +61,18 @@ export function usePreloadOnStartMutation() {
 
   return useMutation({
     mutationFn: (value: boolean) => setPreloadOnStart(value),
+    onSuccess: async (config) => {
+      queryClient.setQueryData<ApiConfig>(queryKeys.config.current(), config)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.config.current() })
+    },
+  })
+}
+
+export function useBlocklistEnabledMutation() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (value: boolean) => setBlocklistEnabled(value),
     onSuccess: async (config) => {
       queryClient.setQueryData<ApiConfig>(queryKeys.config.current(), config)
       await queryClient.invalidateQueries({ queryKey: queryKeys.config.current() })

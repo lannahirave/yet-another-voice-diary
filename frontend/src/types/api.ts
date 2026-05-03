@@ -102,6 +102,7 @@ export interface ApiConfig {
   preload_on_start: boolean
   device: string
   providers: ApiProviderStatus[]
+  blocklist_enabled: boolean
 }
 
 export type ApiModelStatusMap = Record<string, ApiProviderStatus>

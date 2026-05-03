@@ -180,6 +180,7 @@ class ConfigOut(BaseModel):
     preload_on_start: bool = False
     device: str = "auto"
     providers: list[ProviderStatus]
+    blocklist_enabled: bool = False
 
 
 class ThresholdUpdate(BaseModel):
@@ -191,6 +192,10 @@ class UnloadAfterStopUpdate(BaseModel):
 
 
 class PreloadOnStartUpdate(BaseModel):
+    value: bool
+
+
+class BlocklistUpdate(BaseModel):
     value: bool
 
 

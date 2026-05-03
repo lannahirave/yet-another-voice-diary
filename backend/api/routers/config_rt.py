@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from ...config import SUPPORTED_DIARIZATION_MODEL_IDS, normalize_diarization_model_id
 from ...providers.diarization import create_diarization_provider
 from ..schemas import (
+    BlocklistUpdate,
     ConfigOut,
     DeviceUpdate,
     PreloadOnStartUpdate,
@@ -51,6 +52,7 @@ def get_config_rt(request: Request):
         unload_models_after_stop=cfg.pipeline.unload_models_after_stop,
         preload_on_start=cfg.providers.preload_on_start,
         device=cfg.providers.device,
+        blocklist_enabled=cfg.pipeline.blocklist_enabled,
         providers=[
             _provider_status(kind, provider) for kind, provider in providers.items()
         ],
@@ -76,6 +78,13 @@ def set_unload_after_stop(payload: UnloadAfterStopUpdate, request: Request):
 @router.post("/preload-on-start", response_model=ConfigOut)
 def set_preload_on_start(payload: PreloadOnStartUpdate, request: Request):
     request.app.state.config.providers.preload_on_start = bool(payload.value)
+    request.app.state.config.save()
+    return get_config_rt(request)
+
+
+@router.post("/blocklist", response_model=ConfigOut)
+def set_blocklist(payload: BlocklistUpdate, request: Request):
+    request.app.state.config.pipeline.blocklist_enabled = bool(payload.value)
     request.app.state.config.save()
     return get_config_rt(request)
 
