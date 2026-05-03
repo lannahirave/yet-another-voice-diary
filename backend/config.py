@@ -102,6 +102,7 @@ class ProviderConfig:
     asr_model_id: str = "large-v3-turbo"
     diarization_model_id: str = "pyannote"
     embedding_model_id: str = "ecapa"
+    elevenlabs_api_token: str = ""
     device: str = "auto"
     preload_on_start: bool = False
 

@@ -6,11 +6,15 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 
 from ...config import SUPPORTED_DIARIZATION_MODEL_IDS, normalize_diarization_model_id
+from ...providers.asr import WhisperASRProvider
 from ...providers.diarization import create_diarization_provider
+from ...providers.elevenlabs import ElevenLabsASRProvider
+from ...providers.embedding import ECAPATDNNEmbeddingProvider
 from ..schemas import (
     BlocklistUpdate,
     ConfigOut,
     DeviceUpdate,
+    ElevenLabsTokenUpdate,
     PreloadOnStartUpdate,
     ProviderSelect,
     ProviderStatus,
@@ -20,6 +24,22 @@ from ..schemas import (
 )
 
 router = APIRouter()
+
+
+def _mask_token(token: str) -> str:
+    if not token:
+        return "not set"
+    return f"...{token[-4:]}"
+
+
+def _asr_provider_factory(config, device: str | None = None) -> object:
+    """Create the ASR provider based on the configured model_id."""
+    if config.providers.asr_model_id == "elevenlabs-scribe":
+        return ElevenLabsASRProvider(api_token=config.providers.elevenlabs_api_token)
+    return WhisperASRProvider(
+        model_id=config.providers.asr_model_id,
+        device=device or config.providers.device,
+    )
 
 
 def _provider_status(kind: str, provider: object) -> ProviderStatus:
@@ -53,6 +73,7 @@ def get_config_rt(request: Request):
         preload_on_start=cfg.providers.preload_on_start,
         device=cfg.providers.device,
         blocklist_enabled=cfg.pipeline.blocklist_enabled,
+        elevenlabs_api_token_masked=_mask_token(cfg.providers.elevenlabs_api_token),
         providers=[
             _provider_status(kind, provider) for kind, provider in providers.items()
         ],
@@ -108,10 +129,7 @@ def set_device(payload: DeviceUpdate, request: Request):
         if hasattr(provider, "unload"):
             provider.unload()
     # Re-create providers with the new device
-    providers["asr"] = WhisperASRProvider(
-        model_id=config.providers.asr_model_id,
-        device=payload.value,
-    )
+    providers["asr"] = _asr_provider_factory(config, device=payload.value)
     providers["diarization"] = create_diarization_provider(
         config.providers.diarization_model_id,
         device=payload.value,
@@ -177,12 +195,26 @@ def select_provider(kind: str, payload: ProviderSelect, request: Request):
         coordinator = getattr(request.app.state, "coordinator", None)
         if coordinator is not None:
             coordinator.diarization = provider
+    elif kind == "asr" and (
+        payload.model_id == "elevenlabs-scribe"
+        or config.providers.asr_model_id == "elevenlabs-scribe"
+    ):
+        if hasattr(provider, "unload"):
+            provider.unload()
+        config.providers.asr_model_id = payload.model_id
+        provider = _asr_provider_factory(config, device=None)
+        providers[kind] = provider
+        coordinator = getattr(request.app.state, "coordinator", None)
+        if coordinator is not None:
+            coordinator.asr = provider
     elif hasattr(provider, "model_id"):
         provider.model_id = payload.model_id
     elif hasattr(provider, "model_size"):
         provider.model_size = payload.model_id
     if kind == "asr":
-        config.providers.asr_model_id = payload.model_id
+        # Set by elevenlabs branch above, or fall through
+        if config.providers.asr_model_id != payload.model_id:
+            config.providers.asr_model_id = payload.model_id
     elif kind == "embedding":
         config.providers.embedding_model_id = payload.model_id
     elif kind == "diarization":
@@ -197,4 +229,28 @@ def select_provider(kind: str, payload: ProviderSelect, request: Request):
         states[kind].progress = 0.0
         states[kind].started_at = 0.0
     config.save()
+    return get_config_rt(request)
+
+
+@router.post("/elevenlabs-token", response_model=ConfigOut)
+def set_elevenlabs_token(payload: ElevenLabsTokenUpdate, request: Request):
+    config = request.app.state.config
+    config.providers.elevenlabs_api_token = payload.token
+    config.save()
+
+    # If the ASR provider is currently ElevenLabs, update its token in-place
+    providers = request.app.state.providers
+    asr = providers.get("asr")
+    if isinstance(asr, ElevenLabsASRProvider):
+        asr.api_token = payload.token
+        asr.load()
+
+    # Also update the coordinator reference if needed
+    coordinator = getattr(request.app.state, "coordinator", None)
+    if coordinator is not None and isinstance(
+        getattr(coordinator, "asr", None), ElevenLabsASRProvider
+    ):
+        coordinator.asr.api_token = payload.token
+        coordinator.asr.load()
+
     return get_config_rt(request)

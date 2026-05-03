@@ -96,6 +96,10 @@ export interface ApiProviderStatus {
 
 export interface ApiConfig {
   vad_threshold: number
+  vad_min_silence_ms: number
+  vad_speech_pad_ms: number
+  vad_min_utterance_ms: number
+  vad_max_utterance_ms: number
   speaker_identification_threshold: number
   chunk_duration_ms: number
   unload_models_after_stop: boolean
@@ -103,6 +107,7 @@ export interface ApiConfig {
   device: string
   providers: ApiProviderStatus[]
   blocklist_enabled: boolean
+  elevenlabs_api_token_masked: string
 }
 
 export type ApiModelStatusMap = Record<string, ApiProviderStatus>

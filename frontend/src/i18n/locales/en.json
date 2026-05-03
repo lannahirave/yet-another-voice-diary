@@ -196,7 +196,10 @@
     "errSaveThreshold": "Could not save threshold",
     "backendUnavailable": "Backend unavailable",
     "languageUkrainian": "Українська",
-    "languageEnglish": "English"
+    "languageEnglish": "English",
+    "elevenlabsTokenLabel": "ElevenLabs API Token",
+    "elevenlabsTokenDesc": "Required for Scribe cloud transcription. Get your token at elevenlabs.io → Settings → API Keys.",
+    "elevenlabsTokenSet": "Set token"
   },
   "api": {
     "backendUnavailable": "Backend not responding. Check that the server is running on 127.0.0.1:8765.",

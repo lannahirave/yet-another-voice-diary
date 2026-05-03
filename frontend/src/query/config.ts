@@ -4,6 +4,7 @@ import {
   getStorageInfo,
   selectProvider,
   setBlocklistEnabled,
+  setElevenLabsToken,
   setPreloadOnStart,
   setThreshold,
   setUnloadAfterStop,
@@ -73,6 +74,18 @@ export function useBlocklistEnabledMutation() {
 
   return useMutation({
     mutationFn: (value: boolean) => setBlocklistEnabled(value),
+    onSuccess: async (config) => {
+      queryClient.setQueryData<ApiConfig>(queryKeys.config.current(), config)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.config.current() })
+    },
+  })
+}
+
+export function useElevenLabsTokenMutation() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (token: string) => setElevenLabsToken(token),
     onSuccess: async (config) => {
       queryClient.setQueryData<ApiConfig>(queryKeys.config.current(), config)
       await queryClient.invalidateQueries({ queryKey: queryKeys.config.current() })

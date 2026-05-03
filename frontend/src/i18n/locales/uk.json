@@ -205,7 +205,10 @@
     "errSaveThreshold": "Не вдалося зберегти поріг",
     "backendUnavailable": "Бекенд недоступний",
     "languageUkrainian": "Українська",
-    "languageEnglish": "English"
+    "languageEnglish": "English",
+    "elevenlabsTokenLabel": "API-токен ElevenLabs",
+    "elevenlabsTokenDesc": "Потрібен для хмарної транскрипції Scribe. Отримайте токен на elevenlabs.io → Settings → API Keys.",
+    "elevenlabsTokenSet": "Встановити токен"
   },
   "api": {
     "backendUnavailable": "Бекенд не відповідає. Перевірте, що сервер запущено на 127.0.0.1:8765.",
