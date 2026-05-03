@@ -11,7 +11,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from ..config import BackendConfig
 from ..pipeline.coordinator import PipelineCoordinator
-from ..providers.asr import WhisperASRProvider
 from ..providers.diarization import create_diarization_provider
 from ..providers.embedding import ECAPATDNNEmbeddingProvider
 from ..storage.database import Database
@@ -85,10 +84,7 @@ def create_app(config: Optional[BackendConfig] = None) -> FastAPI:
     runner.apply_pending()
     db.close()
 
-    asr = WhisperASRProvider(
-        model_id=config.providers.asr_model_id,
-        device=config.providers.device,
-    )
+    asr = config_rt._asr_provider_factory(config)
     diarization = create_diarization_provider(
         config.providers.diarization_model_id,
         device=config.providers.device,

@@ -33,4 +33,10 @@ export const setBlocklistEnabled = (value: boolean) =>
     body: JSON.stringify({ value }),
   })
 
+export const setElevenLabsToken = (token: string) =>
+  apiFetch<ApiConfig>('/config/elevenlabs-token', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  })
+
 export const getStorageInfo = () => apiFetch<ApiStorageInfo>('/config/storage')

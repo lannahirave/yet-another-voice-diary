@@ -5,6 +5,7 @@ import { subscribeModelProgress } from '../api/models'
 import {
   useBlocklistEnabledMutation,
   useConfigQuery,
+  useElevenLabsTokenMutation,
   useModelLifecycleMutation,
   usePreloadOnStartMutation,
   useSelectProviderMutation,
@@ -68,6 +69,13 @@ interface ModelCardProps {
 }
 
 const ASR_MODELS: ModelDef[] = [
+  {
+    id: 'elevenlabs-scribe',
+    name: 'ElevenLabs Scribe',
+    size: 'cloud',
+    speed: 'settings.speedRealtime',
+    quality: 'settings.qualityRecommended',
+  },
   {
     id: 'tiny',
     name: 'whisper tiny',
@@ -359,6 +367,9 @@ export function Settings() {
   const [savingUnload, setSavingUnload] = useState(false)
   const [savingPreload, setSavingPreload] = useState(false)
   const [savingBlocklist, setSavingBlocklist] = useState(false)
+  const [savingELToken, setSavingELToken] = useState(false)
+  const [editingToken, setEditingToken] = useState(false)
+  const [tokenDraft, setTokenDraft] = useState('')
   const [modelAction, setModelAction] = useState<ProviderKind | null>(null)
   const [progressByKind, setProgressByKind] = useState<Record<string, number>>({})
 
@@ -369,6 +380,7 @@ export function Settings() {
   const unloadAfterStopMutation = useUnloadAfterStopMutation()
   const preloadOnStartMutation = usePreloadOnStartMutation()
   const blocklistEnabledMutation = useBlocklistEnabledMutation()
+  const elevenLabsTokenMutation = useElevenLabsTokenMutation()
   const modelLifecycleMutation = useModelLifecycleMutation()
 
   const config = configQuery.data ?? null
@@ -543,6 +555,21 @@ export function Settings() {
     }
   }
 
+  const commitElevenLabsToken = async () => {
+    if (!config || savingELToken) return
+    setSavingELToken(true)
+    setActionError(null)
+    try {
+      await elevenLabsTokenMutation.mutateAsync(tokenDraft)
+      setTokenDraft('')
+      setEditingToken(false)
+    } catch (error) {
+      setActionError(configErrorMessage(error, t('settings.errSaveSetting'), t))
+    } finally {
+      setSavingELToken(false)
+    }
+  }
+
   const thresholdControlsDisabled = loadingConfig || !config || savingThreshold
   const unloadAfterStop = config?.unload_models_after_stop ?? false
   const preloadOnStart = config?.preload_on_start ?? false
@@ -629,6 +656,91 @@ export function Settings() {
             <div style={stS.modelGrid}>
               {renderModelCards('asr', asrModels, asrProvider, selectedAsrModel)}
             </div>
+
+            {selectedAsrModel === 'elevenlabs-scribe' && (
+              <div style={{ marginTop: 14 }}>
+                <div style={stS.settingRow}>
+                  <div style={{ flex: 1 }}>
+                    <div style={stS.settingName}>
+                      {t('settings.elevenlabsTokenLabel')}
+                    </div>
+                    <div style={stS.settingDesc}>
+                      {t('settings.elevenlabsTokenDesc')}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {editingToken ? (
+                      <>
+                        <input
+                          data-testid="elevenlabs-token-input"
+                          type="password"
+                          value={tokenDraft}
+                          onChange={(e) => setTokenDraft(e.target.value)}
+                          placeholder="sk-…"
+                          disabled={savingELToken}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') void commitElevenLabsToken()
+                            if (e.key === 'Escape') {
+                              setEditingToken(false)
+                              setTokenDraft('')
+                            }
+                          }}
+                          style={{
+                            background: 'var(--surface2)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 6,
+                            padding: '5px 10px',
+                            fontSize: 12,
+                            color: 'var(--text)',
+                            fontFamily: 'var(--mono)',
+                            width: 220,
+                          }}
+                        />
+                        <button
+                          data-testid="elevenlabs-token-save"
+                          onClick={() => void commitElevenLabsToken()}
+                          disabled={savingELToken || tokenDraft.trim() === ''}
+                          style={{
+                            ...stS.modelBtn,
+                            ...stS.modelBtnIdle,
+                            ...(savingELToken || tokenDraft.trim() === ''
+                              ? stS.modelBtnDisabled : {}),
+                          }}
+                        >
+                          {savingELToken ? t('settings.saving') : t('common.save')}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span
+                          style={{
+                            fontSize: 12.5,
+                            fontFamily: 'var(--mono)',
+                            color: 'var(--text-muted)',
+                          }}
+                        >
+                          {config?.elevenlabs_api_token_masked ?? 'not set'}
+                        </span>
+                        <button
+                          data-testid="elevenlabs-token-edit"
+                          onClick={() => {
+                            setEditingToken(true)
+                            setTokenDraft('')
+                          }}
+                          disabled={savingELToken}
+                          style={{
+                            ...stS.modelBtn,
+                            ...stS.modelBtnIdle,
+                          }}
+                        >
+                          {t('settings.elevenlabsTokenSet')}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <SectionTitle mt={28}>{t('settings.embedSection')}</SectionTitle>
             <div style={stS.modelGrid}>

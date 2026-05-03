@@ -181,6 +181,7 @@ class ConfigOut(BaseModel):
     device: str = "auto"
     providers: list[ProviderStatus]
     blocklist_enabled: bool = False
+    elevenlabs_api_token_masked: str = "not set"
 
 
 class ThresholdUpdate(BaseModel):
@@ -242,3 +243,9 @@ class UtteranceIdentifyRequest(BaseModel):
 class UtteranceIdentifyResponse(BaseModel):
     updated_count: int = 1
     cascaded_count: int = 0
+
+
+# ---------- ElevenLabs Token ----------
+
+class ElevenLabsTokenUpdate(BaseModel):
+    token: str
