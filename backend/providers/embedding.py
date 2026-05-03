@@ -100,6 +100,23 @@ class ECAPATDNNEmbeddingProvider:
             return "mps"
         return "cpu"
 
+    def _resolve_speechbrain_device(self) -> str:
+        """Return a SpeechBrain-compatible device string for ECAPA.
+
+        SpeechBrain 1.1's inference base class only initializes its autocast
+        ``device_type`` for CPU and CUDA. Passing ``mps`` falls through and
+        crashes during ``SpeakerRecognition`` construction, so keep ECAPA on
+        CPU while allowing the other providers to use MPS.
+        """
+        device = normalize_indexed_cuda_device(self._resolve_device())
+        if device == "mps":
+            log.warning(
+                "SpeechBrain ECAPA does not support MPS in this environment; "
+                "falling back to CPU for embeddings"
+            )
+            return "cpu"
+        return device
+
     def _load_model(self):
         """Load model lazily."""
         self._state = "LOADING"
@@ -123,7 +140,7 @@ class ECAPATDNNEmbeddingProvider:
 
         _patch_speechbrain_hf_compat()
 
-        device = normalize_indexed_cuda_device(self._resolve_device())
+        device = self._resolve_speechbrain_device()
         try:
             self._model = SpeakerRecognition.from_hparams(
                 source=model_name,

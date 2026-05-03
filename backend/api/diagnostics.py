@@ -133,7 +133,7 @@ class DebugSession:
             "confidence": confidence,
             "source": source,
             "speaker_segments": serializable_segments,
-            "waveform_file": (self.output_dir / wav_rel).resolve().as_uri(),
+            "waveform_file": wav_rel.as_posix(),
         }
 
         self.utterances.append(meta)

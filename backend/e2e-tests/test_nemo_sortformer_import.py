@@ -103,6 +103,44 @@ finally:
     assert "LOADED" in result.stdout
 
 
+def test_speechbrain_embedding_uses_cpu_when_auto_resolves_to_mps():
+    web_app = Path(__file__).parents[2]
+    script = """
+from backend.providers.embedding import ECAPATDNNEmbeddingProvider
+from speechbrain.inference import SpeakerRecognition
+
+original = SpeakerRecognition.from_hparams
+
+class FakeModel:
+    pass
+
+def fake_from_hparams(*args, **kwargs):
+    print(f"DEVICE={kwargs['run_opts']['device']}")
+    return FakeModel()
+
+try:
+    SpeakerRecognition.from_hparams = staticmethod(fake_from_hparams)
+    provider = ECAPATDNNEmbeddingProvider(device="auto")
+    provider._resolve_device = lambda: "mps"
+    provider.load()
+    print(provider._state)
+finally:
+    SpeakerRecognition.from_hparams = original
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-X", "utf8", "-c", script],
+        cwd=web_app,
+        text=True,
+        capture_output=True,
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "DEVICE=cpu" in result.stdout
+    assert "LOADED" in result.stdout
+
+
 def test_pyannote_diarization_receives_indexed_cuda_device():
     web_app = Path(__file__).parents[2]
     script = """

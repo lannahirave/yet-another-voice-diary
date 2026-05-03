@@ -7,6 +7,7 @@ run against the same WS session to avoid redundant 60-second model loads.
 from __future__ import annotations
 
 import uuid
+import time
 from collections.abc import Iterator
 
 import numpy as np
@@ -24,9 +25,11 @@ from fastapi.testclient import TestClient
 def models_loaded(sync_client: TestClient) -> Iterator[None]:
     for kind in ("asr", "embedding", "diarization"):
         r = sync_client.post(f"/models/{kind}/load")
-        assert r.json()["state"] == "LOADED", (
+        assert r.status_code == 200, f"Failed to start loading {kind}: {r.text}"
+        assert r.json()["state"] in {"LOADING", "LOADED"}, (
             f"Failed to load {kind} for pipeline tests: {r.json()}"
         )
+        _wait_for_loaded(sync_client, kind)
     yield
     for kind in ("asr", "embedding", "diarization"):
         sync_client.post(f"/models/{kind}/unload")
@@ -35,6 +38,27 @@ def models_loaded(sync_client: TestClient) -> Iterator[None]:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _wait_for_loaded(
+    sync_client: TestClient,
+    kind: str,
+    timeout_s: float = 600.0,
+) -> dict:
+    deadline = time.monotonic() + timeout_s
+    last: dict = {}
+    while time.monotonic() < deadline:
+        r = sync_client.get("/models/status")
+        assert r.status_code == 200
+        last = r.json()[kind]
+        if last["state"] == "LOADED":
+            return last
+        if last["state"] == "ERROR":
+            raise AssertionError(f"{kind} entered ERROR: {last}")
+        time.sleep(0.5)
+    raise AssertionError(
+        f"{kind} did not reach LOADED within {timeout_s}s; last={last}"
+    )
 
 
 def _stream_session(

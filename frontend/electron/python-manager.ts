@@ -11,9 +11,15 @@ const INTERVAL_MS = 500
 let pythonProc: ChildProcess | null = null
 
 function resolvePythonCommand(webAppDir: string): string {
+  if (process.env.VOICE_DIARY_PYTHON) {
+    return process.env.VOICE_DIARY_PYTHON
+  }
+
   const candidates = [
     path.join(webAppDir, '.venv-ml', 'Scripts', 'python.exe'),
+    path.join(webAppDir, '.venv-ml', 'bin', 'python'),
     path.join(webAppDir, '.venv', 'Scripts', 'python.exe'),
+    path.join(webAppDir, '.venv', 'bin', 'python'),
   ]
 
   for (const candidate of candidates) {
@@ -22,7 +28,7 @@ function resolvePythonCommand(webAppDir: string): string {
     }
   }
 
-  return 'python'
+  return process.platform === 'win32' ? 'python' : 'python3'
 }
 
 function healthCheck(): Promise<boolean> {
@@ -71,11 +77,18 @@ export async function startPythonBackend(webAppDir: string): Promise<void> {
     })
   }
 
+  const spawnError = new Promise<never>((_, reject) => {
+    pythonProc?.once('error', (err) => {
+      console.error('[python] failed to start', err)
+      reject(err)
+    })
+  })
+
   pythonProc.stdout?.on('data', (d: Buffer) => console.log('[python]', d.toString().trim()))
   pythonProc.stderr?.on('data', (d: Buffer) => console.error('[python]', d.toString().trim()))
   pythonProc.on('exit', (code) => console.log('[python] exited with', code))
 
-  await waitUntilReady(MAX_ATTEMPTS)
+  await Promise.race([waitUntilReady(MAX_ATTEMPTS), spawnError])
 }
 
 export function stopPythonBackend(): void {
