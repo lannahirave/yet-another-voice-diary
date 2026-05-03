@@ -23,3 +23,12 @@ npm run electron:dev
 | `electron/python-manager.ts` | Spawns/kills Python process, health-check loop |
 | `backend/run.py` | Uvicorn entry point (host `127.0.0.1`, port `8765`) |
 | `src/` | React renderer (Vite) |
+
+## macOS system audio in dev
+
+`npm run electron:dev` uses Electron/Chromium's native desktop-audio capture
+path and macOS may grant permission to the Electron helper, Terminal, or the
+IDE that launched it.
+
+If system audio capture returns silence or no audio track, grant screen/system
+audio permission to Electron or the launching terminal, then restart the app.

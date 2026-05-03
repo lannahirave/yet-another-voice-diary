@@ -1,4 +1,5 @@
-import { app, BrowserWindow, desktopCapturer, ipcMain, session, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { initMain as initAudioLoopback } from 'electron-audio-loopback'
 import * as path from 'path'
 import { startPythonBackend, stopPythonBackend } from './python-manager'
 
@@ -6,6 +7,10 @@ const isDev = process.env.NODE_ENV === 'development'
 const BACKEND_PORT = 8765
 const FRONTEND_DIR = path.resolve(__dirname, '..')
 const WEB_APP_DIR = path.resolve(FRONTEND_DIR, '..')
+
+initAudioLoopback({
+  forceCoreAudioTap: process.platform === 'darwin',
+})
 
 type BackendStartupStatus =
   | { state: 'starting'; port: number; error: null }
@@ -20,29 +25,6 @@ let backendStatus: BackendStartupStatus = {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
-}
-
-function configureDesktopLoopback(): void {
-  session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
-    const sources = await desktopCapturer.getSources({
-      types: ['screen'],
-      thumbnailSize: { width: 0, height: 0 },
-      fetchWindowIcons: false,
-    })
-
-    if (sources.length === 0) {
-      callback({})
-      return
-    }
-
-    callback({
-      video: sources[0],
-      // Electron's supported Windows system-audio path grants a screen
-      // stream plus loopback audio. The renderer requests both, then
-      // reads only the audio track.
-      audio: 'loopback',
-    })
-  })
 }
 
 async function createWindow(): Promise<void> {
@@ -85,7 +67,6 @@ ipcMain.handle('get-backend-status', () => backendStatus)
 ipcMain.handle('open-path', (_event, p: string) => shell.openPath(p))
 
 app.whenReady().then(() => {
-  configureDesktopLoopback()
   void createWindow()
 
   app.on('activate', () => {
