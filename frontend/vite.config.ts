@@ -2,12 +2,14 @@ import { defineConfig } from 'vitest/config'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
 
-const reactCompilerBabel = await babel({
-  presets: [reactCompilerPreset({ target: '19' })],
-})
-
 export default defineConfig({
-  plugins: [reactCompilerBabel, react()],
+  plugins: [
+    // React Compiler Babel preset — enables automatic memoization (React 19+)
+    babel({
+      presets: [reactCompilerPreset({ target: '19' })],
+    }),
+    react(),
+  ],
   server: {
     port: 5173,
     strictPort: true,
