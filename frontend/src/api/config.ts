@@ -39,4 +39,10 @@ export const setElevenLabsToken = (token: string) =>
     body: JSON.stringify({ token }),
   })
 
+export const setPipeline = (fields: Record<string, number>) =>
+  apiFetch<ApiConfig>('/config/pipeline', {
+    method: 'POST',
+    body: JSON.stringify(fields),
+  })
+
 export const getStorageInfo = () => apiFetch<ApiStorageInfo>('/config/storage')

@@ -96,10 +96,14 @@ export interface ApiProviderStatus {
 
 export interface ApiConfig {
   vad_threshold: number
+  vad_negative_threshold: number
   vad_min_silence_ms: number
+  vad_speech_pad_pre_ms: number
+  vad_speech_pad_post_ms: number
   vad_speech_pad_ms: number
   vad_min_utterance_ms: number
   vad_max_utterance_ms: number
+  vad_model_id: string
   speaker_identification_threshold: number
   chunk_duration_ms: number
   unload_models_after_stop: boolean

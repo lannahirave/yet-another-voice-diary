@@ -133,6 +133,7 @@
   "settings": {
     "title": "Settings",
     "tabProviders": "Providers",
+    "tabPipeline": "Pipeline",
     "tabMemory": "Memory",
     "tabStorage": "Storage",
     "tabGeneral": "General",
@@ -199,7 +200,23 @@
     "languageEnglish": "English",
     "elevenlabsTokenLabel": "ElevenLabs API Token",
     "elevenlabsTokenDesc": "Required for Scribe cloud transcription. Get your token at elevenlabs.io → Settings → API Keys.",
-    "elevenlabsTokenSet": "Set token"
+    "elevenlabsTokenSet": "Set token",
+    "pipelineSection": "VAD — voice activity detection",
+    "vadOnsetLabel": "Speech onset (start)",
+    "vadOnsetDesc": "Probability must reach this value for speech to begin. Lower = more sensitive to quiet speech, but more false starts on noise. Recommended: 0.50–0.70.",
+    "vadOffsetLabel": "Speech offset (end)",
+    "vadOffsetDesc": "Once speaking, speech continues until probability drops below this lower threshold. The gap between onset and offset is the hysteresis band — it prevents mid-word toggling. Must be below onset. Recommended: onset − 0.15.",
+    "vadMinSilenceLabel": "Minimum silence (ms)",
+    "vadMinSilenceDesc": "Silence required to close an utterance. Lower = tighter sentence boundaries, better diarization. Higher = fewer, longer utterances. Recommended: 250–400 ms.",
+    "vadPadPreLabel": "Pre-speech padding (ms)",
+    "vadPadPreDesc": "Audio before detected speech to include for Whisper context. Captures co-articulation for the first phoneme. Recommended: 200–400 ms.",
+    "vadPadPostLabel": "Post-speech padding (ms)",
+    "vadPadPostDesc": "Audio after detected speech to include for Whisper context. Recommended: 300–500 ms.",
+    "vadMinUttLabel": "Minimum utterance (ms)",
+    "vadMinUttDesc": "Utterances shorter than this are discarded as noise (cough, click). Recommended: 200–500 ms.",
+    "vadMaxUttLabel": "Maximum utterance (ms)",
+    "vadMaxUttDesc": "Force-split monologues at this length to bound memory and ASR latency. Shorter = better diarization accuracy. Recommended: 8,000–15,000 ms.",
+    "vadRequiresRestart": "VAD parameters take effect on the next recording. No restart required."
   },
   "api": {
     "backendUnavailable": "Backend not responding. Check that the server is running on 127.0.0.1:8765.",

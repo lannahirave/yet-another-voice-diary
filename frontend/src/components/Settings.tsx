@@ -9,6 +9,7 @@ import {
   useModelLifecycleMutation,
   usePreloadOnStartMutation,
   useSelectProviderMutation,
+  useSetPipelineMutation,
   useSetThresholdMutation,
   useStorageInfoQuery,
   useUnloadAfterStopMutation,
@@ -24,8 +25,8 @@ type ModelState =
   | 'AVAILABLE'
   | 'ERROR'
 
-type ProviderKind = 'asr' | 'embedding' | 'diarization'
-type SectionId = 'providers' | 'memory' | 'storage' | 'general'
+type ProviderKind = 'asr' | 'embedding' | 'diarization' | 'vad'
+type SectionId = 'providers' | 'pipeline' | 'memory' | 'storage' | 'general'
 
 const STATE_COLORS: Record<ModelState, string> = {
   LOADED: 'var(--green)',
@@ -135,6 +136,7 @@ const DIAR_MODELS: ModelDef[] = [
 
 const sectionsBase: Array<{ id: SectionId; labelKey: string }> = [
   { id: 'providers', labelKey: 'settings.tabProviders' },
+  { id: 'pipeline', labelKey: 'settings.tabPipeline' },
   { id: 'memory', labelKey: 'settings.tabMemory' },
   { id: 'storage', labelKey: 'settings.tabStorage' },
   { id: 'general', labelKey: 'settings.tabGeneral' },
@@ -373,6 +375,16 @@ export function Settings() {
   const [modelAction, setModelAction] = useState<ProviderKind | null>(null)
   const [progressByKind, setProgressByKind] = useState<Record<string, number>>({})
 
+  // VAD pipeline local state
+  const [vadOnset, setVadOnset] = useState(0.60)
+  const [vadOffset, setVadOffset] = useState(0.45)
+  const [vadMinSilence, setVadMinSilence] = useState(300)
+  const [vadPadPre, setVadPadPre] = useState(300)
+  const [vadPadPost, setVadPadPost] = useState(400)
+  const [vadMinUtt, setVadMinUtt] = useState(300)
+  const [vadMaxUtt, setVadMaxUtt] = useState(10_000)
+  const [savingPipeline, setSavingPipeline] = useState(false)
+
   const configQuery = useConfigQuery()
   const storageQuery = useStorageInfoQuery()
   const selectProviderMutation = useSelectProviderMutation()
@@ -382,6 +394,7 @@ export function Settings() {
   const blocklistEnabledMutation = useBlocklistEnabledMutation()
   const elevenLabsTokenMutation = useElevenLabsTokenMutation()
   const modelLifecycleMutation = useModelLifecycleMutation()
+  const setPipelineMutation = useSetPipelineMutation()
 
   const config = configQuery.data ?? null
   const loadingConfig = configQuery.isLoading
@@ -391,6 +404,13 @@ export function Settings() {
   useEffect(() => {
     if (config) {
       setThresholdValue(config.speaker_identification_threshold)
+      setVadOnset(config.vad_threshold)
+      setVadOffset(config.vad_negative_threshold)
+      setVadMinSilence(config.vad_min_silence_ms)
+      setVadPadPre(config.vad_speech_pad_pre_ms)
+      setVadPadPost(config.vad_speech_pad_post_ms)
+      setVadMinUtt(config.vad_min_utterance_ms)
+      setVadMaxUtt(config.vad_max_utterance_ms)
       setActionError(null)
     }
   }, [config])
@@ -552,6 +572,19 @@ export function Settings() {
       setActionError(configErrorMessage(error, t('settings.errSaveSetting'), t))
     } finally {
       setSavingBlocklist(false)
+    }
+  }
+
+  const commitPipeline = async (fields: Record<string, number>) => {
+    if (!config || savingPipeline) return
+    setSavingPipeline(true)
+    setActionError(null)
+    try {
+      await setPipelineMutation.mutateAsync(fields)
+    } catch (error) {
+      setActionError(configErrorMessage(error, t('settings.errSaveSetting'), t))
+    } finally {
+      setSavingPipeline(false)
     }
   }
 
@@ -760,6 +793,153 @@ export function Settings() {
                 diarizationProvider,
                 selectedDiarizationModel,
               )}
+            </div>
+          </>
+        )}
+
+        {active === 'pipeline' && (
+          <>
+            <SectionTitle>{t('settings.pipelineSection')}</SectionTitle>
+
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.vadOnsetLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.vadOnsetDesc')}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="range"
+                  min={20} max={100}
+                  value={Math.round(vadOnset * 100)}
+                  disabled={savingPipeline}
+                  onChange={(e) => setVadOnset(Number(e.target.value) / 100)}
+                  onPointerUp={() => commitPipeline({ vad_threshold: vadOnset })}
+                  style={{ width: 140, accentColor: 'var(--accent)' }}
+                />
+                <span style={stS.paramValue}>{vadOnset.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.vadOffsetLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.vadOffsetDesc')}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="range"
+                  min={1} max={100}
+                  value={Math.round(vadOffset * 100)}
+                  disabled={savingPipeline}
+                  onChange={(e) => setVadOffset(Number(e.target.value) / 100)}
+                  onPointerUp={() => commitPipeline({ vad_negative_threshold: vadOffset })}
+                  style={{ width: 140, accentColor: 'var(--accent)' }}
+                />
+                <span style={stS.paramValue}>{vadOffset.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <Divider />
+
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.vadMinSilenceLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.vadMinSilenceDesc')}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  type="range"
+                  min={100} max={800}
+                  value={vadMinSilence}
+                  disabled={savingPipeline}
+                  onChange={(e) => setVadMinSilence(Number(e.target.value))}
+                  onPointerUp={() => commitPipeline({ vad_min_silence_ms: vadMinSilence })}
+                  style={{ width: 120, accentColor: 'var(--accent)' }}
+                />
+                <span style={stS.paramValue}>{vadMinSilence} ms</span>
+              </div>
+            </div>
+
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.vadPadPreLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.vadPadPreDesc')}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  type="range"
+                  min={50} max={600}
+                  value={vadPadPre}
+                  disabled={savingPipeline}
+                  onChange={(e) => setVadPadPre(Number(e.target.value))}
+                  onPointerUp={() => commitPipeline({ vad_speech_pad_pre_ms: vadPadPre })}
+                  style={{ width: 120, accentColor: 'var(--accent)' }}
+                />
+                <span style={stS.paramValue}>{vadPadPre} ms</span>
+              </div>
+            </div>
+
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.vadPadPostLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.vadPadPostDesc')}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  type="range"
+                  min={50} max={800}
+                  value={vadPadPost}
+                  disabled={savingPipeline}
+                  onChange={(e) => setVadPadPost(Number(e.target.value))}
+                  onPointerUp={() => commitPipeline({ vad_speech_pad_post_ms: vadPadPost })}
+                  style={{ width: 120, accentColor: 'var(--accent)' }}
+                />
+                <span style={stS.paramValue}>{vadPadPost} ms</span>
+              </div>
+            </div>
+
+            <Divider />
+
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.vadMinUttLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.vadMinUttDesc')}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  type="range"
+                  min={50} max={1000}
+                  value={vadMinUtt}
+                  disabled={savingPipeline}
+                  onChange={(e) => setVadMinUtt(Number(e.target.value))}
+                  onPointerUp={() => commitPipeline({ vad_min_utterance_ms: vadMinUtt })}
+                  style={{ width: 120, accentColor: 'var(--accent)' }}
+                />
+                <span style={stS.paramValue}>{vadMinUtt} ms</span>
+              </div>
+            </div>
+
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.vadMaxUttLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.vadMaxUttDesc')}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  type="range"
+                  min={3_000} max={60_000} step={1_000}
+                  value={vadMaxUtt}
+                  disabled={savingPipeline}
+                  onChange={(e) => setVadMaxUtt(Number(e.target.value))}
+                  onPointerUp={() => commitPipeline({ vad_max_utterance_ms: vadMaxUtt })}
+                  style={{ width: 120, accentColor: 'var(--accent)' }}
+                />
+                <span style={stS.paramValue}>{(vadMaxUtt / 1000).toFixed(0)} s</span>
+              </div>
+            </div>
+
+            <div style={stS.inlineHint}>
+              {savingPipeline ? t('settings.saving') : t('settings.vadRequiresRestart')}
             </div>
           </>
         )}
@@ -1197,6 +1377,15 @@ const stS: Record<string, CSSProperties> = {
     color: 'var(--text-dim)',
     fontFamily: 'var(--mono)',
     marginTop: 9,
+  },
+  paramValue: {
+    fontSize: 13,
+    fontWeight: 500,
+    fontFamily: 'var(--mono)',
+    color: 'var(--text)',
+    width: 56,
+    textAlign: 'right' as const,
+    flexShrink: 0,
   },
   infoBox: {
     background: 'var(--surface)',

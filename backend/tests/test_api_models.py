@@ -42,7 +42,7 @@ async def test_model_status_lists_configured_providers(client):
 
     assert response.status_code == 200
     body = response.json()
-    assert set(body) == {"asr", "diarization", "embedding"}
+    assert set(body) == {"asr", "diarization", "embedding", "vad"}
     assert body["asr"]["model_id"] == "large-v3-turbo"
     assert body["asr"]["state"] == "UNLOADED"
 

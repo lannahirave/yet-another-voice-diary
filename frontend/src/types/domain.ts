@@ -43,6 +43,10 @@ export interface Utterance {
   lang?: Language
   source?: AudioSource
   sessionStartedAt?: string
+  /** Session-relative start in ms (for gap calculation). */
+  startedMs?: number
+  /** Session-relative end in ms. */
+  endedMs?: number
 }
 
 export interface UnknownQueueCandidate {

@@ -12,6 +12,34 @@ import { createSession } from '../api/sessions'
 import { useContactsData } from '../query/contacts'
 import type { Utterance } from '../types/domain'
 import { fmt } from '../utils/format'
+
+/** Merge granular (live-streamed) utterances from the same speaker when
+ *  the gap between them is under 1 second.  Keeps the display clean during
+ *  fast exchanges while backend embeddings are still extracted from the
+ *  accumulated audio when the speaker's turn ends. */
+const MERGE_GAP_MS = 1000
+
+function mergeLiveUtterance(prev: Utterance[], next: Utterance): Utterance[] {
+  if (prev.length === 0) return [next]
+  const last = prev[prev.length - 1]
+  const gap = (next.startedMs ?? 0) - (last.endedMs ?? 0)
+  if (
+    last.speakerId === next.speakerId &&
+    last.source === next.source &&
+    gap >= 0 && gap < MERGE_GAP_MS
+  ) {
+    const merged: Utterance = {
+      ...last,
+      id: next.id,
+      speakerSegmentId: next.speakerSegmentId ?? last.speakerSegmentId,
+      text: last.text + ' ' + next.text,
+      endedMs: next.endedMs,
+    }
+    return [...prev.slice(0, -1), merged]
+  }
+  return [...prev, next]
+}
+
 import { Avatar } from './shared/Avatar'
 import { AudioLevelFooterLive } from './shared/AudioLevelFooter'
 import { getUtteranceCandidates } from '../api/sessions'
@@ -353,6 +381,7 @@ export function CurrentSession({
         id: string
         transcript: string
         started_ms: number
+        ended_ms: number
         language: string | null
         speaker_segment_id: string | null
         speaker_contact_id: string | null
@@ -361,9 +390,8 @@ export function CurrentSession({
       const s = Math.floor(d.started_ms / 1000)
       const m = Math.floor(s / 60)
       const time = `${m}:${String(s % 60).padStart(2, '0')}`
-      setUtterances((prev) => [
-        ...prev,
-        {
+      setUtterances((prev) =>
+        mergeLiveUtterance(prev, {
           id: d.id,
           speakerId: d.speaker_contact_id,
           speakerSegmentId: d.speaker_segment_id,
@@ -371,8 +399,10 @@ export function CurrentSession({
           text: d.transcript,
           lang: d.language === 'EN' ? 'EN' : d.language === 'UK' ? 'UK' : undefined,
           source: 'system',
-        },
-      ])
+          startedMs: d.started_ms,
+          endedMs: d.ended_ms,
+        }),
+      )
     })
     sysWs.on('error', (err) => addToast({
       type: 'error',
@@ -419,6 +449,7 @@ export function CurrentSession({
           id: string
           transcript: string
           started_ms: number
+          ended_ms: number
           language: string | null
           speaker_segment_id: string | null
           speaker_contact_id: string | null
@@ -428,9 +459,8 @@ export function CurrentSession({
         const m = Math.floor(s / 60)
         const time = `${m}:${String(s % 60).padStart(2, '0')}`
         setShowLive(false)
-        setUtterances((prev) => [
-          ...prev,
-          {
+        setUtterances((prev) =>
+          mergeLiveUtterance(prev, {
             id: d.id,
             speakerId: d.speaker_contact_id,
             speakerSegmentId: d.speaker_segment_id,
@@ -438,8 +468,10 @@ export function CurrentSession({
             text: d.transcript,
             lang: d.language === 'EN' ? 'EN' : d.language === 'UK' ? 'UK' : undefined,
             source: 'mic',
-          },
-        ])
+            startedMs: d.started_ms,
+            endedMs: d.ended_ms,
+          }),
+        )
       })
 
       ws.on('error', (err) => addToast({

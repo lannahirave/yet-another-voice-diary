@@ -15,6 +15,7 @@ from ..schemas import (
     ConfigOut,
     DeviceUpdate,
     ElevenLabsTokenUpdate,
+    PipelineUpdate,
     PreloadOnStartUpdate,
     ProviderSelect,
     ProviderStatus,
@@ -63,10 +64,14 @@ def get_config_rt(request: Request):
     providers = request.app.state.providers
     return ConfigOut(
         vad_threshold=cfg.pipeline.vad_threshold,
+        vad_negative_threshold=cfg.pipeline.vad_negative_threshold,
         vad_min_silence_ms=cfg.pipeline.vad_min_silence_ms,
+        vad_speech_pad_pre_ms=cfg.pipeline.vad_speech_pad_pre_ms,
+        vad_speech_pad_post_ms=cfg.pipeline.vad_speech_pad_post_ms,
         vad_speech_pad_ms=cfg.pipeline.vad_speech_pad_ms,
         vad_min_utterance_ms=cfg.pipeline.vad_min_utterance_ms,
         vad_max_utterance_ms=cfg.pipeline.vad_max_utterance_ms,
+        vad_model_id=cfg.providers.vad_model_id,
         speaker_identification_threshold=cfg.pipeline.speaker_identification_threshold,
         chunk_duration_ms=cfg.pipeline.chunk_duration_ms,
         unload_models_after_stop=cfg.pipeline.unload_models_after_stop,
@@ -85,6 +90,21 @@ def set_threshold(payload: ThresholdUpdate, request: Request):
     if not 0.0 <= payload.value <= 1.0:
         raise HTTPException(status_code=400, detail="threshold must be 0..1")
     request.app.state.config.pipeline.speaker_identification_threshold = payload.value
+    request.app.state.config.save()
+    return get_config_rt(request)
+
+
+@router.post("/pipeline", response_model=ConfigOut)
+def set_pipeline(payload: PipelineUpdate, request: Request):
+    """Update pipeline VAD / endpointing parameters in bulk.
+
+    Only supplied fields are applied; omitted keys keep their current values.
+    """
+    pipeline = request.app.state.config.pipeline
+    updates = payload.model_dump(exclude_unset=True)
+    for field, value in updates.items():
+        if hasattr(pipeline, field):
+            setattr(pipeline, field, value)
     request.app.state.config.save()
     return get_config_rt(request)
 

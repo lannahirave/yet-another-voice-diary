@@ -5,6 +5,7 @@ import {
   selectProvider,
   setBlocklistEnabled,
   setElevenLabsToken,
+  setPipeline,
   setPreloadOnStart,
   setThreshold,
   setUnloadAfterStop,
@@ -38,6 +39,18 @@ export function useSetThresholdMutation() {
 
   return useMutation({
     mutationFn: (value: number) => setThreshold('speaker', value),
+    onSuccess: async (config) => {
+      queryClient.setQueryData<ApiConfig>(queryKeys.config.current(), config)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.config.current() })
+    },
+  })
+}
+
+export function useSetPipelineMutation() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (fields: Record<string, number>) => setPipeline(fields),
     onSuccess: async (config) => {
       queryClient.setQueryData<ApiConfig>(queryKeys.config.current(), config)
       await queryClient.invalidateQueries({ queryKey: queryKeys.config.current() })

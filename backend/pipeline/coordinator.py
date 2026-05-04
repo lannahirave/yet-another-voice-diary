@@ -11,7 +11,7 @@ from ..config import PipelineConfig
 from ..models import RecordingSession, SpeakerSegment, Utterance
 from ..providers.base import ASRProvider, DiarizationProvider, EmbeddingProvider
 from ..providers.diarization import DiarizationSegment
-from .vad import VADProcessor
+from ..providers.vad import VADSegment
 
 # Dedicated thread pool for ML inference — keeps heavy model calls (ASR,
 # diarization, embedding) from competing with HTTP handler threads in
@@ -50,11 +50,17 @@ class PipelineCoordinator:
         self.asr = asr_provider
         self.diarization = diarization_provider
         self.embedding = embedding_provider
-        self.vad = vad_processor or VADProcessor(
-            threshold=config.vad_threshold,
-            min_silence_ms=config.vad_min_silence_ms,
-            speech_pad_ms=config.vad_speech_pad_ms,
-        )
+        self.vad = vad_processor
+        if self.vad is None:
+            from ..providers.vad import create_vad_provider
+            _vad = create_vad_provider(
+                threshold=config.vad_threshold,
+                negative_threshold=config.vad_negative_threshold,
+                min_silence_ms=config.vad_min_silence_ms,
+                speech_pad_pre_ms=config.vad_speech_pad_pre_ms,
+                speech_pad_post_ms=config.vad_speech_pad_post_ms,
+            )
+            self.vad = _vad.create_session()
         self.source = source
 
         self._current_session: Optional[RecordingSession] = None
@@ -595,6 +601,16 @@ class PipelineCoordinator:
                 "debug:vad",
                 {"ms": started_ms, "is_speech": is_speech_now},
             )
+
+        # Rising edge: inject preroll audio so Whisper has co-articulation
+        # context for the first phoneme of the utterance.
+        if not was_in_speech and is_speech_now:
+            preroll = getattr(vad_segment, "preroll_audio", None)
+            if preroll is not None and preroll.size > 0:
+                preroll_ms = self._chunk_duration_ms(preroll, sample_rate)
+                self._buffer_chunk(
+                    preroll, max(0, started_ms - preroll_ms), started_ms, sample_rate
+                )
 
         # Buffer audio that is part of a speech span, including the
         # falling-edge chunk so Silero's trailing speech-pad is preserved.

@@ -50,22 +50,50 @@ class PipelineConfig:
     minimum useful utterance, and a hard cap to prevent runaway buffers.
     """
 
-    vad_threshold: float = 0.5
-    """Silero VAD speech-probability threshold (0..1)."""
+    vad_threshold: float = 0.60
+    """VAD speech-probability **onset** threshold (0..1).
 
-    vad_min_silence_ms: int = 500
-    """Trailing silence required to declare end-of-utterance.
+    Speech starts when the per-frame probability meets or exceeds this value.
+    Follows Vexa's conservative onset for noisy real-world audio.
+    """
 
-    Forwarded to Silero's ``VADIterator`` as ``min_silence_duration_ms``. Too
-    low → utterances split on intra-sentence breaths. Too high → user perceives
-    lag before transcripts appear.
+    vad_negative_threshold: float = 0.45
+    """VAD speech-probability **offset** threshold (0..1).
+
+    Once speech has started it continues until the probability drops below
+    this value for ``vad_min_silence_ms``.  The gap between onset and offset
+    is the hysteresis band — it absorbs wavering borderline speech and
+    prevents rapid toggling.
+    """
+
+    vad_min_silence_ms: int = 300
+    """Trailing sub-offset silence required to declare end-of-speech.
+
+    Lower than the prior 500 ms default to tighten utterance boundaries for
+    better diarization. Too low → utterances split on intra-sentence breaths.
+    Too high → multi-sentence paragraphs merge into one utterance.
+    """
+
+    vad_speech_pad_pre_ms: int = 300
+    """Audio padding **before** detected speech (preroll).
+
+    Prepended to the utterance buffer so Whisper has enough co-articulation
+    context for the first phoneme.
+    """
+
+    vad_speech_pad_post_ms: int = 400
+    """Audio padding **after** detected speech (trailing).
+
+    The VAD delays the ``is_speech=False`` signal by this duration so the
+    coordinator captures trailing audio around the final phoneme.
     """
 
     vad_speech_pad_ms: int = 200
-    """Padding added to each side of detected speech windows.
+    """*Deprecated* — kept for backward compat with existing config files.
 
-    Forwarded to Silero. Captures co-articulation around the speech boundary
-    so Whisper does not lose the leading/trailing phoneme.
+    When loading an old config that only has this field (and lacks
+    ``vad_speech_pad_pre_ms`` / ``vad_speech_pad_post_ms``) the load path
+    seeds the new fields from this value.
     """
 
     vad_min_utterance_ms: int = 300
@@ -77,11 +105,12 @@ class PipelineConfig:
     the unknown queue or the voice-profile gallery.
     """
 
-    vad_max_utterance_ms: int = 30_000
+    vad_max_utterance_ms: int = 10_000
     """Hard cap on continuous speech before forcing a flush.
 
-    Safeguards memory/latency on monologues. The speaker remains voiced after
-    a forced flush; the next chunk continues buffering a fresh utterance.
+    Capped at 10 s (was 30 s) because PyAnnote diarization accuracy degrades
+    on multi-speaker segments longer than ~15 s.  The speaker remains voiced
+    after a forced flush; the next chunk continues buffering a fresh utterance.
     """
 
     speaker_identification_threshold: float = 0.5
@@ -102,6 +131,7 @@ class ProviderConfig:
     asr_model_id: str = "large-v3-turbo"
     diarization_model_id: str = "pyannote"
     embedding_model_id: str = "ecapa"
+    vad_model_id: str = "silero"
     elevenlabs_api_token: str = ""
     device: str = "auto"
     preload_on_start: bool = False
@@ -153,9 +183,11 @@ class BackendConfig:
             return cls.default()
 
         raw = json.loads(source.read_text(encoding="utf-8"))
+        pipeline_raw = raw.get("pipeline", {})
+        cls._migrate_vad_padding(pipeline_raw)
         config = cls(
             database=cls._load_database(raw.get("database", {})),
-            pipeline=PipelineConfig(**raw.get("pipeline", {})),
+            pipeline=PipelineConfig(**pipeline_raw),
             providers=ProviderConfig(**raw.get("providers", {})),
         )
         raw_diarization_model_id = (
@@ -174,3 +206,19 @@ class BackendConfig:
             path=Path(raw_path) if raw_path is not None else None,
             echo=bool(raw.get("echo", False)),
         )
+
+    @staticmethod
+    def _migrate_vad_padding(pipeline_raw: dict[str, Any]) -> None:
+        """Seed new pre/post padding fields from legacy ``vad_speech_pad_ms``.
+
+        When a config file created before the asymmetric-padding change
+        contains ``vad_speech_pad_ms`` but is missing the new
+        ``vad_speech_pad_pre_ms`` / ``vad_speech_pad_post_ms`` keys,
+        populate both from the old value.
+        """
+        if "vad_speech_pad_ms" not in pipeline_raw:
+            return
+        if "vad_speech_pad_pre_ms" not in pipeline_raw:
+            pipeline_raw["vad_speech_pad_pre_ms"] = pipeline_raw["vad_speech_pad_ms"]
+        if "vad_speech_pad_post_ms" not in pipeline_raw:
+            pipeline_raw["vad_speech_pad_post_ms"] = pipeline_raw["vad_speech_pad_ms"]

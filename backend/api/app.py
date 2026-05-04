@@ -13,6 +13,7 @@ from ..config import BackendConfig
 from ..pipeline.coordinator import PipelineCoordinator
 from ..providers.diarization import create_diarization_provider
 from ..providers.embedding import ECAPATDNNEmbeddingProvider
+from ..providers.vad import create_vad_provider
 from ..storage.database import Database
 from ..storage.fts_migration import register_fts_migration
 from ..storage.migrations import MigrationRunner
@@ -93,6 +94,14 @@ def create_app(config: Optional[BackendConfig] = None) -> FastAPI:
         model_id=config.providers.embedding_model_id,
         device=config.providers.device,
     )
+    vad = create_vad_provider(
+        model_id=config.providers.vad_model_id,
+        threshold=config.pipeline.vad_threshold,
+        negative_threshold=config.pipeline.vad_negative_threshold,
+        min_silence_ms=config.pipeline.vad_min_silence_ms,
+        speech_pad_pre_ms=config.pipeline.vad_speech_pad_pre_ms,
+        speech_pad_post_ms=config.pipeline.vad_speech_pad_post_ms,
+    )
     coordinator = PipelineCoordinator(config.pipeline, asr, diarization, embedding)
 
     app = FastAPI(title="Voice Diary API", version="0.1.0", lifespan=_lifespan)
@@ -102,6 +111,7 @@ def create_app(config: Optional[BackendConfig] = None) -> FastAPI:
         "asr": asr,
         "diarization": diarization,
         "embedding": embedding,
+        "vad": vad,
     }
 
     if config.providers.preload_on_start:

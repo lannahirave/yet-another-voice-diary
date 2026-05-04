@@ -29,7 +29,6 @@ from ...identification.resolver import SpeakerResolver, SQLiteResolverStore
 from ...models import RecordingSession, SpeakerSegment, Utterance
 from ...pipeline.coordinator import PipelineCoordinator
 from ..diagnostics import DebugSession, start_debug_session
-from ...pipeline.vad import VADProcessor
 from ...storage.queue_repo import QueueRepo
 from ...storage.session_repo import SessionRepo
 
@@ -116,24 +115,23 @@ _ALLOWED_TRACKS = {"mic", "system"}
 def _build_coordinator(state: Any, source: str) -> PipelineCoordinator:
     """Construct a fresh coordinator per WS connection.
 
-    The coordinator owns per-stream state (VAD iterator, audio buffer, current
-    session). Sharing one across two parallel tracks would corrupt that state
-    instantly. Provider singletons (ASR / diarization / embedding) are reused
+    The coordinator owns per-stream state (VAD session, audio buffer, current
+    session).  Sharing one across two parallel tracks would corrupt that state
+    instantly.  Provider singletons (ASR / diarization / embedding) are reused
     because they're stateless w.r.t. the call sequence and expensive to load.
+
+    The VAD manager is a singleton (loaded model), but each connection gets
+    its own lightweight ``VadSession`` with independent LSTM state.
     """
     cfg = state.config
     providers = state.providers
-    vad = VADProcessor(
-        threshold=cfg.pipeline.vad_threshold,
-        min_silence_ms=cfg.pipeline.vad_min_silence_ms,
-        speech_pad_ms=cfg.pipeline.vad_speech_pad_ms,
-    )
+    vad_session = providers["vad"].create_session()
     return PipelineCoordinator(
         cfg.pipeline,
         providers["asr"],
         providers["diarization"],
         providers["embedding"],
-        vad_processor=vad,
+        vad_processor=vad_session,
         source=source,
     )
 

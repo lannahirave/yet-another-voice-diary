@@ -67,6 +67,8 @@ export function adaptUtterance(api: ApiUtterance): Utterance {
     lang: api.language === 'EN' ? 'EN' : api.language === 'UK' ? 'UK' : undefined,
     source: api.source === 'system' ? 'system' : 'mic',
     sessionStartedAt: api.session_started_at,
+    startedMs: api.started_ms,
+    endedMs: api.ended_ms,
   }
 }
 

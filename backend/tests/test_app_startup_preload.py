@@ -35,5 +35,5 @@ def test_startup_preload_passes_kind_provider_and_load(monkeypatch, tmp_path):
     for thread in threads:
         thread.join(timeout=2.0)
 
-    assert [kind for kind, _, _ in calls] == ["asr", "diarization", "embedding"]
+    assert [kind for kind, _, _ in calls] == ["asr", "diarization", "embedding", "vad"]
     assert all(load is app.state.load_states[kind] for kind, _, load in calls)

@@ -170,10 +170,14 @@ class ProviderStatus(BaseModel):
 
 class ConfigOut(BaseModel):
     vad_threshold: float
+    vad_negative_threshold: float
     vad_min_silence_ms: int
+    vad_speech_pad_pre_ms: int
+    vad_speech_pad_post_ms: int
     vad_speech_pad_ms: int
     vad_min_utterance_ms: int
     vad_max_utterance_ms: int
+    vad_model_id: str = "silero"
     speaker_identification_threshold: float
     chunk_duration_ms: int
     unload_models_after_stop: bool = False
@@ -186,6 +190,21 @@ class ConfigOut(BaseModel):
 
 class ThresholdUpdate(BaseModel):
     value: float
+
+
+class PipelineUpdate(BaseModel):
+    """Partial update for pipeline configuration fields.
+
+    Every field is optional — only supplied keys are applied.
+    """
+    vad_threshold: Optional[float] = None
+    vad_negative_threshold: Optional[float] = None
+    vad_min_silence_ms: Optional[int] = None
+    vad_speech_pad_pre_ms: Optional[int] = None
+    vad_speech_pad_post_ms: Optional[int] = None
+    vad_min_utterance_ms: Optional[int] = None
+    vad_max_utterance_ms: Optional[int] = None
+    speaker_identification_threshold: Optional[float] = None
 
 
 class UnloadAfterStopUpdate(BaseModel):
