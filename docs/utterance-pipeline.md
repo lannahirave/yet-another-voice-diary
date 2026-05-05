@@ -298,24 +298,54 @@ In `CurrentSession.tsx`:
 
 ## 7. Configuration Summary
 
-All values from `backend/config.py`, `PipelineConfig` dataclass (lines 42-98).
+All values from `backend/config.py`, `PipelineConfig` dataclass.
+
+### VAD Parameters
 
 | Parameter | Default | Runtime Mutable? | Effect |
 |-----------|---------|-------------------|--------|
-| `vad_threshold` | `0.60` | No | Speech onset probability — sensitivity |
-| `vad_negative_threshold` | `0.45` | No | Speech offset — lower = less eager to end |
-| `vad_min_silence_ms` | `300` | No | Gap between utterances (lower = more splits, better diarization) |
-| `vad_speech_pad_pre_ms` | `300` | No | Preroll before speech onset (Whisper co-articulation) |
-| `vad_speech_pad_post_ms` | `400` | No | Trailing audio after speech end (delayed `is_speech=False`) |
-| `vad_min_utterance_ms` | `300` | No | Minimum utterance length (noise filter) |
-| `vad_max_utterance_ms` | `10_000` | No | Maximum before forced split (was 30s; 10s improves diarization) |
+| `vad_threshold` | `0.60` | Yes (`POST /config/pipeline`) | Speech onset probability |
+| `vad_negative_threshold` | `0.45` | Yes | Speech offset — hysteresis band |
+| `vad_min_silence_ms` | `300` | Yes | Gap between utterances |
+| `vad_speech_pad_pre_ms` | `300` | Yes | Preroll before speech onset |
+| `vad_speech_pad_post_ms` | `400` | Yes | Trailing audio after speech end |
+| `vad_min_utterance_ms` | `300` | Yes | Minimum utterance length (noise filter) |
+| `vad_max_utterance_ms` | `10_000` | Yes | Maximum before forced split |
+| `vad_model_id` | `"silero"` | No | VAD backend selection |
+
+### ASR Quality Gates
+
+| Parameter | Default | Runtime Mutable? | Effect |
+|-----------|---------|-------------------|--------|
+| `asr_no_speech_threshold` | `0.6` | Yes | Silence probability above which output is discarded |
+| `asr_compression_ratio_threshold` | `2.4` | Yes | Repetitive output threshold |
+| `asr_repetition_penalty` | `1.1` | Yes | Token repetition penalty |
+| `asr_no_repeat_ngram_size` | `3` | Yes | N-gram repeat blocking |
+
+### Speaker Attribution
+
+| Parameter | Default | Runtime Mutable? | Effect |
+|-----------|---------|-------------------|--------|
 | `speaker_identification_threshold` | `0.5` | Yes (`POST /config/threshold`) | Cosine floor for auto-matching |
-| `vad_model_id` | `"silero"` | No | VAD backend selection (provider) |
-| `chunk_duration_ms` | `100` | No | Expected WebSocket chunk duration (reference) |
-| `unload_models_after_stop` | `False` | No | Free RAM after recording (adds 3-10s next warm-up) |
+| `mic_is_self` | `True` | Yes | Skip diarization for mic, always "You" |
+
+### Streaming
+
+| Parameter | Default | Runtime Mutable? | Effect |
+|-----------|---------|-------------------|--------|
+| `draft_enabled` | `False` | Yes | Enable draft mid-speech transcripts |
+| `draft_interval_ms` | `5000` | Yes | Interval between draft ASR submissions |
+| `chunk_duration_ms` | `100` | No | Expected WebSocket chunk duration |
+
+### Memory
+
+| Parameter | Default | Runtime Mutable? | Effect |
+|-----------|---------|-------------------|--------|
+| `unload_models_after_stop` | `False` | Yes | Free RAM after recording |
+| `blocklist_enabled` | `False` | Yes | Drop hallucination transcripts |
 
 **Persistence:** `~/.voice-diary/config.json`, loaded at startup.
-VAD thresholds require app restart to change.
+All pipeline fields are runtime-mutable via `POST /config/pipeline` — changes take effect on the next utterance (no restart).
 
 ---
 
@@ -329,41 +359,50 @@ Per `AGENTS.md`, the pipeline continues when any component fails:
 | Diarization | Treated as single-speaker `"speaker-0"` |
 | Embedding | Segment skipped, error emitted |
 | Empty ASR transcript | Utterance discarded, buffer reset |
-| VAD | **Exception raised** (lightweight, no fallback) |
+| VAD | Enters degraded mode — all audio treated as speech; 10s force-flush bounds output |
 
 ---
 
 ## 9. Key File Index
 
-| File | Lines | Role |
-|------|-------|------|
-| `backend/pipeline/coordinator.py` | 632 | Core state machine: buffering, endpointing, inference dispatch |
-| `backend/pipeline/vad.py` | 192 | Silero VAD wrapper: frame buffering, VADIterator lifecycle |
-| `backend/providers/asr.py` | 343 | Whisper ASR (faster-whisper with Transformers fallback) |
-| `backend/providers/diarization.py` | 531 | PyAnnote 3.1 + NeMo Sortformer providers |
-| `backend/providers/embedding.py` | 179 | ECAPA-TDNN speaker embeddings via SpeechBrain |
-| `backend/config.py` | 176 | PipelineConfig, ProviderConfig, BackendConfig |
-| `backend/models.py` | 80 | Domain models: Utterance, SpeakerSegment, etc. |
-| `backend/api/routers/audio_ws.py` | 392 | WebSocket endpoint: binary audio in → JSON utterances out |
-| `backend/identification/resolver.py` | 243 | Speaker identification via cosine similarity |
-| `backend/identification/matching.py` | 35 | `find_best_match` — single highest cosine |
-| `backend/storage/session_repo.py` | 327 | SQLite persistence for sessions, utterances, segments |
-| `frontend/src/api/websocket.ts` | 146 | `AudioWebSocket` class — WebSocket client |
-| `frontend/src/types/api.ts` | 14-26 | `ApiUtterance` type (mirrors `backend/api/schemas.py`) |
-| `frontend/src/api/adapters.ts` | 60-71 | `adaptUtterance()` API → domain mapper |
-| `frontend/src/components/CurrentSession.tsx` | — | Live recording view — WebSocket handlers, virtualized list |
+| File | Role |
+|------|------|
+| `backend/pipeline/coordinator.py` | Core state machine: gating, inference dispatch |
+| `backend/providers/vad.py` | Silero VAD provider: hysteresis, padding, speech buffering, degraded mode |
+| `backend/providers/asr.py` | Whisper ASR (faster-whisper with Transformers fallback) |
+| `backend/providers/diarization.py` | PyAnnote 3.1 + NeMo Sortformer providers |
+| `backend/providers/embedding.py` | ECAPA-TDNN speaker embeddings via SpeechBrain |
+| `backend/config.py` | PipelineConfig, ProviderConfig, BackendConfig |
+| `backend/models.py` | Domain models: Utterance, SpeakerSegment, etc. |
+| `backend/api/routers/audio_ws.py` | WebSocket endpoint: binary audio in → JSON utterances out |
+| `backend/api/routers/config_rt.py` | REST config endpoints (threshold, pipeline, provider selection) |
+| `backend/api/schemas.py` | Pydantic request/response schemas |
+| `backend/identification/resolver.py` | Speaker identification via cosine similarity |
+| `backend/storage/session_repo.py` | SQLite persistence for sessions, utterances, segments |
+| `frontend/src/api/websocket.ts` | `AudioWebSocket` class — WebSocket client |
+| `frontend/src/types/api.ts` | `ApiUtterance` / `ApiConfig` types (mirrors schemas.py) |
+| `frontend/src/api/adapters.ts` | `adaptUtterance()` API → domain mapper |
+| `frontend/src/components/CurrentSession.tsx` | Live recording view — WebSocket handlers, virtualized list, visual merging |
+| `frontend/src/components/Settings.tsx` | Pipeline tab — VAD, ASR quality, speaker attribution controls |
 
 ---
 
 ## 10. Known Issues & Trade-offs
 
-1. **30s force-split may cut mid-word** — no sentence-boundary awareness.
+1. **10s force-split may cut mid-word** — no sentence-boundary awareness.
 2. **300ms min-utterance drops short backchannels** ("yes!", "no!") — fine
    for meetings, less so for conversational use.
 3. **ECAPA needs 1.5-3s for stable embeddings** — short utterances produce
    unreliable speaker vectors (cosine 0.45–0.75 for same speaker).
 4. **Diarization runs on pre-segmented VAD chunks** — Sortformer's streaming
    capability is unused; all diarization is utterance-scoped.
+5. **Mic = You skips diarization for mic audio** — saves CPU but means
+   multiple speakers on the same mic are all attributed to "you." Toggle
+   `mic_is_self` off in Settings to re-enable mic diarization.
+6. **Draft streaming uses whisper small model** — fast but less accurate
+   than large-v3-turbo. Drafts are temporary previews and never persisted.
+7. **All VAD/ASR params now runtime-mutable via Settings** — no restart
+   required; changes take effect on the next utterance.
 5. **Live WebSocket utterances skip `adaptUtterance()`** — `msToTime()`
    formatting is duplicated inline in `CurrentSession.tsx`.
 6. **Default identification threshold (0.82) is aggressive** — real ECAPA
