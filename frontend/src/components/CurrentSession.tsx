@@ -51,6 +51,7 @@ type RecState = 'idle' | 'starting' | 'recording' | 'paused'
 interface UtteranceRowProps {
   utt: Utterance
   isLive?: boolean
+  isDraft?: boolean
   onIdentify?: (utteranceId: string, contactId: string) => Promise<void>
   onPickerToggled?: (open: boolean) => void
 }
@@ -58,6 +59,7 @@ interface UtteranceRowProps {
 const UtteranceRow = memo(function UtteranceRow({
   utt,
   isLive = false,
+  isDraft = false,
   onIdentify,
   onPickerToggled,
 }: UtteranceRowProps) {
@@ -139,7 +141,7 @@ const UtteranceRow = memo(function UtteranceRow({
           )}
           {utt.lang && <span style={csS.langTag}>{utt.lang}</span>}
         </div>
-        <div style={{ ...csS.uttText, color: contact ? 'var(--text)' : 'var(--text-soft)', fontFamily: 'var(--utterance-font, var(--sans))' }}>
+        <div style={{ ...csS.uttText, color: contact ? 'var(--text)' : isDraft ? 'var(--text-dim)' : 'var(--text-soft)', fontFamily: 'var(--utterance-font, var(--sans))', fontStyle: isDraft ? 'italic' : 'normal' }}>
           {isLive ? (
             <span style={{ display: 'flex', gap: 3, alignItems: 'center', height: 18 }}>
               {[0, 1, 2].map((i) => (
@@ -252,6 +254,7 @@ export function CurrentSession({
   const [elapsed, setElapsed] = useState(0)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [showLive, setShowLive] = useState(false)
+  const [draftText, setDraftText] = useState<string | null>(null)
   const { addToast } = useToast()
   const micLevelRef = useRef<AudioLevelSnapshot>(SILENCE_SNAPSHOT)
   const sysLevelRef = useRef<AudioLevelSnapshot>(SILENCE_SNAPSHOT)
@@ -404,6 +407,12 @@ export function CurrentSession({
         }),
       )
     })
+
+    sysWs.on('draft_utterance', (data) => {
+      const d = data as { transcript: string }
+      setDraftText(d.transcript)
+    })
+
     sysWs.on('error', (err) => addToast({
       type: 'error',
       title: 'System Audio Error',
@@ -459,6 +468,7 @@ export function CurrentSession({
         const m = Math.floor(s / 60)
         const time = `${m}:${String(s % 60).padStart(2, '0')}`
         setShowLive(false)
+        setDraftText(null)
         setUtterances((prev) =>
           mergeLiveUtterance(prev, {
             id: d.id,
@@ -472,6 +482,11 @@ export function CurrentSession({
             endedMs: d.ended_ms,
           }),
         )
+      })
+
+      ws.on('draft_utterance', (data) => {
+        const d = data as { transcript: string }
+        setDraftText(d.transcript)
       })
 
       ws.on('error', (err) => addToast({
@@ -688,8 +703,14 @@ export function CurrentSession({
           </div>
           {showLive && (
             <UtteranceRow
-              utt={{ id: 'live', speakerId: null, time: fmt(elapsed), text: '' }}
-              isLive
+              utt={{
+                id: 'live',
+                speakerId: null,
+                time: fmt(elapsed),
+                text: draftText ?? '',
+              }}
+              isLive={!draftText}
+              isDraft={!!draftText}
             />
           )}
         </div>

@@ -190,6 +190,8 @@ class ConfigOut(BaseModel):
     asr_compression_ratio_threshold: float = 2.4
     asr_repetition_penalty: float = 1.1
     asr_no_repeat_ngram_size: int = 3
+    draft_enabled: bool = False
+    draft_interval_ms: int = 5000
 
 
 class ThresholdUpdate(BaseModel):

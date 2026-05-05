@@ -83,6 +83,8 @@ def get_config_rt(request: Request):
         asr_compression_ratio_threshold=cfg.pipeline.asr_compression_ratio_threshold,
         asr_repetition_penalty=cfg.pipeline.asr_repetition_penalty,
         asr_no_repeat_ngram_size=cfg.pipeline.asr_no_repeat_ngram_size,
+        draft_enabled=cfg.pipeline.draft_enabled,
+        draft_interval_ms=cfg.pipeline.draft_interval_ms,
         providers=[
             _provider_status(kind, provider) for kind, provider in providers.items()
         ],

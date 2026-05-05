@@ -22,6 +22,7 @@ from ..providers.vad import SpeechSegment
 # avoids thread-safety issues with shared provider singletons (CTranslate2,
 # SpeechBrain, PyAnnote are not designed for concurrent calls).
 _inference_pool = ThreadPoolExecutor(max_workers=1)
+_draft_pool = ThreadPoolExecutor(max_workers=1)
 
 
 log = logging.getLogger(__name__)
@@ -75,6 +76,8 @@ class PipelineCoordinator:
         }
         self._pending_tasks: set[asyncio.Task] = set()  # type: ignore
         self._session_elapsed_ms = 0
+        self._draft_asr: Any = None  # lightweight ASR for draft streaming
+        self._last_draft_ms: int = 0
 
     def on(self, event: str, callback: Callable):
         """Register event callback."""
@@ -139,6 +142,7 @@ class PipelineCoordinator:
         """Start a new recording session."""
         self._current_session = session
         self._session_elapsed_ms = 0
+        self._last_draft_ms = 0
         self.vad.reset()
 
     def end_session(self) -> Optional[RecordingSession]:
@@ -521,6 +525,7 @@ class PipelineCoordinator:
 
         result = self.vad.process(audio, sample_rate)
         if result is None:
+            self._maybe_submit_draft(sample_rate)
             return
 
         # VAD returned a complete utterance.
@@ -539,3 +544,55 @@ class PipelineCoordinator:
         if sample_rate <= 0:
             return 0
         return max(1, int(round((len(audio) / sample_rate) * 1000)))
+
+    def _maybe_submit_draft(self, sample_rate: int) -> None:
+        """Submit current speech buffer for draft ASR if interval elapsed."""
+        if not self.config.draft_enabled:
+            return
+        if self._session_elapsed_ms - self._last_draft_ms < self.config.draft_interval_ms:
+            return
+        snap = self.vad.snapshot()
+        if snap is None or snap.audio.size == 0:
+            return
+
+        self._last_draft_ms = self._session_elapsed_ms
+
+        if self._draft_asr is None:
+            self._draft_asr = self._build_draft_provider()
+
+        session_id = self._current_session.id
+        started_ms = snap.started_ms
+
+        def _run_draft() -> None:
+            try:
+                utterance = self._draft_asr.transcribe(snap.audio, None)
+                if not utterance.transcript.strip():
+                    return
+                self._emit(
+                    "draft_utterance",
+                    {
+                        "session_id": session_id,
+                        "started_ms": started_ms,
+                        "transcript": utterance.transcript,
+                        "language": utterance.language,
+                        "confidence": utterance.confidence,
+                    },
+                )
+            except Exception:
+                log.exception("draft ASR failed")
+
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(_draft_pool, _run_draft)
+
+    def _build_draft_provider(self) -> Any:
+        """Lazy-create a lightweight ASR provider for draft streaming."""
+        from ..providers.asr import WhisperASRProvider
+        return WhisperASRProvider(
+            model_id="small",
+            beam_size=1,
+            # Inherit quality gates from config.
+            no_speech_threshold=self.config.asr_no_speech_threshold,
+            compression_ratio_threshold=self.config.asr_compression_ratio_threshold,
+            repetition_penalty=self.config.asr_repetition_penalty,
+            no_repeat_ngram_size=self.config.asr_no_repeat_ngram_size,
+        )

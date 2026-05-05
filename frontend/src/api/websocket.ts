@@ -1,7 +1,7 @@
 import i18n from '../i18n'
 import { WS_URL } from './client'
 
-type EventType = 'utterance' | 'speaker_segment' | 'error' | 'open' | 'close'
+type EventType = 'utterance' | 'speaker_segment' | 'draft_utterance' | 'error' | 'open' | 'close'
 type Handler = (data: unknown) => void
 type ServerMessage = {
   type?: string
@@ -94,6 +94,7 @@ export class AudioWebSocket {
           if (
             msg.type === 'utterance' ||
             msg.type === 'speaker_segment' ||
+            msg.type === 'draft_utterance' ||
             msg.type === 'close'
           ) {
             this.emit(msg.type, msg.data)

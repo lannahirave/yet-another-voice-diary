@@ -193,6 +193,10 @@ async def stream(ws: WebSocket) -> None:
 
     coord.on("utterance", on_utt)
     coord.on("speaker_segment", on_seg)
+    coord.on(
+        "draft_utterance",
+        lambda d: queue.put_nowait({"type": "draft_utterance", "data": d}),
+    )
 
     # ---- debug mode callbacks ----
 

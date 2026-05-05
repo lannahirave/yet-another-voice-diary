@@ -157,6 +157,17 @@ class PipelineConfig:
     Vexa default: 3.
     """
 
+    draft_enabled: bool = False
+    """If true, emit draft transcripts mid-speech via WebSocket.
+
+    A lightweight ASR model periodically transcribes the current speech
+    buffer before the VAD closes the utterance.  Drafts are never persisted
+    to the database and carry no speaker / diarization info.
+    """
+
+    draft_interval_ms: int = 5000
+    """Minimum interval between draft ASR submissions during active speech."""
+
 
 @dataclass
 class ProviderConfig:
