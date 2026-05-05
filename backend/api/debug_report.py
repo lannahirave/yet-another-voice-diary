@@ -169,7 +169,7 @@ function audioSrc(u){{if(u.waveform_base64)return 'data:audio/wav;base64,'+u.wav
 // Summary
 let summary=document.getElementById('summary');
 summary.innerHTML=`
-<div class="stat"><div class="stat-label">Session</div><div class="stat-value" style="font-size:14px;word-break:break-all">${{DATA.sessionId.slice(0,18)}}&hellip;</div></div>
+<div class="stat"><div class="stat-label">Session</div><div class="stat-value" style="font-size:13px;word-break:break-all;font-family:monospace">${{DATA.sessionId}}</div></div>
 <div class="stat"><div class="stat-label">Started</div><div class="stat-value" style="font-size:14px">${{DATA.startedAt}}</div></div>
 <div class="stat"><div class="stat-label">Ended</div><div class="stat-value" style="font-size:14px">${{DATA.endedAt||'—'}}</div></div>
 <div class="stat"><div class="stat-label">Duration</div><div class="stat-value">${{fmtDuration(DATA.totalDurationMs)}}</div></div>
