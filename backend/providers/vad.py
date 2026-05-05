@@ -312,8 +312,10 @@ class _SileroVadSession(VadSession):
                     preroll = self._extract_preroll()
                     self._speech_chunks.append(preroll)
                     self._speech_sample_rate = sample_rate
-                elif transition == "end" and self._post_pad_counter == 0:
-                    self._post_pad_counter = self._p._post_pad_frames
+                elif transition == "end":
+                    # _step_hysteresis already managed post-pad internally;
+                    # "end" here means truly finished → flush the buffer.
+                    segment = self._flush_speech()
         except Exception as exc:
             log.exception("Silero VAD inference failed; entering degraded mode")
             self._enter_degraded(str(exc))
