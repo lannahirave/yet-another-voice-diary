@@ -85,6 +85,7 @@ def get_config_rt(request: Request):
         asr_no_repeat_ngram_size=cfg.pipeline.asr_no_repeat_ngram_size,
         draft_enabled=cfg.pipeline.draft_enabled,
         draft_interval_ms=cfg.pipeline.draft_interval_ms,
+        mic_is_self=cfg.pipeline.mic_is_self,
         providers=[
             _provider_status(kind, provider) for kind, provider in providers.items()
         ],

@@ -398,6 +398,8 @@ export function Settings() {
   const [asrCompression, setAsrCompression] = useState(2.4)
   const [asrRepPenalty, setAsrRepPenalty] = useState(1.1)
   const [asrNgram, setAsrNgram] = useState(3)
+  const [draftEnabled, setDraftEnabled] = useState(false)
+  const [micIsSelf, setMicIsSelf] = useState(true)
 
   const configQuery = useConfigQuery()
   const storageQuery = useStorageInfoQuery()
@@ -429,6 +431,8 @@ export function Settings() {
       setAsrCompression(config.asr_compression_ratio_threshold)
       setAsrRepPenalty(config.asr_repetition_penalty)
       setAsrNgram(config.asr_no_repeat_ngram_size)
+      setDraftEnabled(config.draft_enabled ?? false)
+      setMicIsSelf(config.mic_is_self ?? true)
       setActionError(null)
     }
   }, [config])
@@ -561,7 +565,7 @@ export function Settings() {
     }
   }
 
-  const commitPipeline = async (fields: Record<string, number>) => {
+  const commitPipeline = async (fields: Record<string, number | boolean>) => {
     if (!config || savingPipeline) return
     setSavingPipeline(true)
     setActionError(null)
@@ -1006,6 +1010,46 @@ export function Settings() {
                 />
                 <span style={{ ...stS.paramValue, width: 24 }}>{asrNgram}</span>
               </div>
+            </div>
+
+            <Divider />
+
+            <SectionTitle mt={20}>{t('settings.speakerSection')}</SectionTitle>
+
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.micIsSelfLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.micIsSelfDesc')}</div>
+              </div>
+              <Toggle
+                dataTestId="mic-self-toggle"
+                on={micIsSelf}
+                onChange={(next) => {
+                  setMicIsSelf(next)
+                  void commitPipeline({ mic_is_self: next })
+                }}
+                disabled={loadingConfig || !config || savingPipeline}
+              />
+            </div>
+
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.draftEnabledLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.draftEnabledDesc')}</div>
+              </div>
+              <Toggle
+                dataTestId="draft-toggle"
+                on={draftEnabled}
+                onChange={(next) => {
+                  setDraftEnabled(next)
+                  void commitPipeline({ draft_enabled: next })
+                }}
+                disabled={loadingConfig || !config || savingPipeline}
+              />
+            </div>
+
+            <div style={stS.inlineHint}>
+              {savingPipeline ? t('settings.saving') : t('settings.speakerHint')}
             </div>
 
             <div style={stS.inlineHint}>

@@ -77,7 +77,7 @@ export function useSetPipelineMutation() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (fields: Record<string, number>) => setPipeline(fields),
+    mutationFn: (fields: Record<string, number | boolean>) => setPipeline(fields),
     onSuccess: async (config) => {
       queryClient.setQueryData<ApiConfig>(queryKeys.config.current(), config)
       await queryClient.invalidateQueries({ queryKey: queryKeys.config.current() })

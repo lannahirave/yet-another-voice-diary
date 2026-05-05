@@ -116,6 +116,9 @@ export interface ApiConfig {
   asr_compression_ratio_threshold: number
   asr_repetition_penalty: number
   asr_no_repeat_ngram_size: number
+  draft_enabled: boolean
+  draft_interval_ms: number
+  mic_is_self: boolean
 }
 
 export type ApiModelStatusMap = Record<string, ApiProviderStatus>

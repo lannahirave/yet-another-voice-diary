@@ -310,8 +310,8 @@ class PipelineCoordinator:
             return (utterance, [], None), errors
 
         diarized_segments: list[DiarizationSegment] = []
-        if self.source == "mic":
-            # Mic is always a single speaker — skip diarization entirely.
+        if self.source == "mic" and self.config.mic_is_self:
+            # Mic attributed to "you" — skip diarization entirely.
             pass
         else:
             _info(

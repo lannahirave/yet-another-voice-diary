@@ -39,7 +39,7 @@ export const setElevenLabsToken = (token: string) =>
     body: JSON.stringify({ token }),
   })
 
-export const setPipeline = (fields: Record<string, number>) =>
+export const setPipeline = (fields: Record<string, number | boolean>) =>
   apiFetch<ApiConfig>('/config/pipeline', {
     method: 'POST',
     body: JSON.stringify(fields),

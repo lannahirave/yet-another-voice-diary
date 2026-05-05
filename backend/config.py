@@ -147,6 +147,14 @@ class PipelineConfig:
     draft_interval_ms: int = 5000
     """Minimum interval between draft ASR submissions during active speech."""
 
+    mic_is_self: bool = True
+    """When true, mic audio skips diarization — always attributed to you.
+
+    Embedding still runs to build your voice profile for future
+    system-audio matching.  When false, mic audio goes through full
+    diarization same as system audio.
+    """
+
 
 @dataclass
 class ProviderConfig:

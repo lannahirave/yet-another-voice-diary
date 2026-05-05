@@ -192,6 +192,7 @@ class ConfigOut(BaseModel):
     asr_no_repeat_ngram_size: int = 3
     draft_enabled: bool = False
     draft_interval_ms: int = 5000
+    mic_is_self: bool = True
 
 
 class ThresholdUpdate(BaseModel):
@@ -211,6 +212,13 @@ class PipelineUpdate(BaseModel):
     vad_min_utterance_ms: Optional[int] = None
     vad_max_utterance_ms: Optional[int] = None
     speaker_identification_threshold: Optional[float] = None
+    asr_no_speech_threshold: Optional[float] = None
+    asr_compression_ratio_threshold: Optional[float] = None
+    asr_repetition_penalty: Optional[float] = None
+    asr_no_repeat_ngram_size: Optional[int] = None
+    draft_enabled: Optional[bool] = None
+    draft_interval_ms: Optional[int] = None
+    mic_is_self: Optional[bool] = None
 
 
 class UnloadAfterStopUpdate(BaseModel):
