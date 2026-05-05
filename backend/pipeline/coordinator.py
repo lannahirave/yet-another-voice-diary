@@ -78,6 +78,7 @@ class PipelineCoordinator:
         self._session_elapsed_ms = 0
         self._draft_asr: Any = None  # lightweight ASR for draft streaming
         self._last_draft_ms: int = 0
+        self._chunk_count: int = 0  # for periodic GC
 
     def on(self, event: str, callback: Callable):
         """Register event callback."""
@@ -143,6 +144,7 @@ class PipelineCoordinator:
         self._current_session = session
         self._session_elapsed_ms = 0
         self._last_draft_ms = 0
+        self._chunk_count = 0
         self.vad.reset()
 
     def end_session(self) -> Optional[RecordingSession]:
@@ -160,6 +162,14 @@ class PipelineCoordinator:
                 self._flush_speech_segment_sync(seg)
         self._current_session = None
         self._session_elapsed_ms = 0
+        self._chunk_count = 0
+        if self._draft_asr is not None:
+            try:
+                if hasattr(self._draft_asr, "unload"):
+                    self._draft_asr.unload()
+            except Exception:
+                log.exception("failed to unload draft ASR")
+            self._draft_asr = None
         self.vad.reset()
         return session
 
@@ -527,6 +537,13 @@ class PipelineCoordinator:
         self._session_elapsed_ms = ended_ms
 
         result = self.vad.process(audio, sample_rate)
+
+        # Periodic GC — returns freed numpy memory to the OS (every ~5 s).
+        self._chunk_count += 1
+        if self._chunk_count % 50 == 0:
+            import gc
+            gc.collect()
+
         if result is None:
             self._maybe_submit_draft(sample_rate)
             return

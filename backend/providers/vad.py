@@ -208,7 +208,8 @@ class _SileroVadSession(VadSession):
 
         self.max_utterance_ms: int = 0
 
-        self._frame_buffer: np.ndarray = np.zeros(0, dtype=np.float32)
+        self._frame_chunks: list[np.ndarray] = []  # list-of-chunks avoids np.concatenate churn
+        self._frame_offset: int = 0  # samples already consumed in first chunk
         self._is_voiced: bool = False
         self._degraded: bool = False
         self._elapsed_ms: int = 0
@@ -235,7 +236,8 @@ class _SileroVadSession(VadSession):
     # -- VADLike protocol ---------------------------------------------------
 
     def reset(self) -> None:
-        self._frame_buffer = np.zeros(0, dtype=np.float32)
+        self._frame_chunks = []
+        self._frame_offset = 0
         self._is_voiced = False
         self._degraded = False
         self._elapsed_ms = 0
@@ -286,12 +288,8 @@ class _SileroVadSession(VadSession):
                 return self._flush_speech()
             return None
 
-        # Accumulate into the fixed-frame buffer and drain.
-        self._frame_buffer = (
-            audio
-            if self._frame_buffer.size == 0
-            else np.concatenate([self._frame_buffer, audio])
-        )
+        # Accumulate into the frame chunk list (avoids np.concatenate churn).
+        self._frame_chunks.append(audio)
 
         try:
             import torch
@@ -301,9 +299,11 @@ class _SileroVadSession(VadSession):
 
         segment: Optional[SpeechSegment] = None
         try:
-            while self._frame_buffer.size >= _FRAME_SAMPLES:
-                frame = self._frame_buffer[:_FRAME_SAMPLES]
-                self._frame_buffer = self._frame_buffer[_FRAME_SAMPLES:]
+            while True:
+                # Drain 512-sample frames from the chunk list.
+                frame = self._drain_frame()
+                if frame is None:
+                    break
 
                 prob = self._get_probability(frame)
                 transition = self._step_hysteresis(prob)
@@ -361,6 +361,36 @@ class _SileroVadSession(VadSession):
         )
 
     # -- internal -----------------------------------------------------------
+
+    def _drain_frame(self) -> Optional[np.ndarray]:
+        """Extract one 512-sample frame from the chunk list.
+
+        Returns ``None`` when fewer than 512 samples remain (partial frame
+        is left in the chunk list for the next call).
+        """
+        avail = sum(len(c) for c in self._frame_chunks) - self._frame_offset
+        if avail < _FRAME_SAMPLES:
+            return None
+
+        needed = _FRAME_SAMPLES
+        parts: list[np.ndarray] = []
+        while needed > 0 and self._frame_chunks:
+            chunk = self._frame_chunks[0]
+            chunk_avail = len(chunk) - self._frame_offset
+            take = min(needed, chunk_avail)
+            parts.append(chunk[self._frame_offset:self._frame_offset + take])
+            self._frame_offset += take
+            needed -= take
+            if self._frame_offset >= len(chunk):
+                self._frame_chunks.pop(0)
+                self._frame_offset = 0
+
+        if len(parts) == 1:
+            return parts[0].copy()
+        return np.concatenate(parts)
+
+    def _frame_total(self) -> int:
+        return sum(len(c) for c in self._frame_chunks) - self._frame_offset
 
     def _reset_speech_buffer(self) -> None:
         self._speech_chunks = []
@@ -479,7 +509,8 @@ class _SileroVadSession(VadSession):
 
     def _enter_degraded(self, reason: str) -> None:
         self._degraded = True
-        self._frame_buffer = np.zeros(0, dtype=np.float32)
+        self._frame_chunks = []
+        self._frame_offset = 0
         self._is_voiced = True
         self._silence_frames = 0
         log.warning("VAD entering degraded mode: %s", reason)
