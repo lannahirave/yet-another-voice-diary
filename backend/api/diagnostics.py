@@ -107,7 +107,16 @@ class DebugSession:
         utt_dir.mkdir(parents=True, exist_ok=True)
 
         wav_rel = Path("utterances") / utt_dir_name / "audio.wav"
-        _wav_to_disk(audio, self.output_dir / wav_rel)
+        wav_path = self.output_dir / wav_rel
+        try:
+            _wav_to_disk(audio, wav_path)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning(
+                "debug: failed to write WAV for utterance %s idx=%d path=%s duration=%dms",
+                utt_id, idx, wav_path, ended_ms - started_ms,
+            )
+            return
 
         serializable_segments: list[dict[str, Any]] = []
         for seg in speaker_segments:
@@ -136,6 +145,11 @@ class DebugSession:
             "waveform_file": (self.output_dir / wav_rel).resolve().as_uri(),
         }
 
+        import logging
+        logging.getLogger(__name__).debug(
+            "debug: saved utterance %s idx=%d ms=%d-%d transcript=%r",
+            utt_id, idx, started_ms, ended_ms, transcript[:80] if transcript else "",
+        )
         self.utterances.append(meta)
 
     def log_vad(self, ms: int, is_speech: bool) -> None:

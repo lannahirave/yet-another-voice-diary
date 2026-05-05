@@ -205,7 +205,7 @@ async def stream(ws: WebSocket) -> None:
             return
         try:
             debug.save_utterance(
-                utt_id="",
+                utt_id=data.get("utt_id", data.get("utterance_id", "")),
                 audio=data["audio"],
                 started_ms=data["started_ms"],
                 ended_ms=data["ended_ms"],

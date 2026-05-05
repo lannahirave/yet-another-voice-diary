@@ -430,6 +430,7 @@ class PipelineCoordinator:
             self._emit(
                 "debug:audio",
                 {
+                    "utt_id": utterance.id,
                     "audio": audio,
                     "started_ms": started_ms,
                     "ended_ms": ended_ms,
