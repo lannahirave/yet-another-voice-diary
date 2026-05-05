@@ -125,6 +125,38 @@ class PipelineConfig:
     blocklist_enabled: bool = False
     """If true, drop Whisper hallucination transcripts (off by default)."""
 
+    asr_no_speech_threshold: float = 0.6
+    """Silence probability above which Whisper output is discarded.
+
+    Forwarded to faster-whisper's ``no_speech_threshold`` and also used as a
+    post-inference gate: if ``info.no_speech_prob > this`` AND
+    ``avg_log_prob < -0.7`` the transcript is treated as silence and dropped.
+    Vexa default: 0.6.  Lower = more aggressive filtering.
+    """
+
+    asr_compression_ratio_threshold: float = 2.4
+    """Repetitive/garbage output threshold.
+
+    Forwarded to faster-whisper's ``compression_ratio_threshold``.  After
+    inference any segment with ``compression_ratio > this`` is discarded.
+    Vexa default: 2.4.  Lower = more aggressive filtering.
+    """
+
+    asr_repetition_penalty: float = 1.1
+    """Token repetition penalty during decoding.
+
+    Forwarded to faster-whisper's ``repetition_penalty``.  1.0 = no penalty;
+    values > 1.0 discourage the model from repeating tokens.  Vexa default: 1.1.
+    """
+
+    asr_no_repeat_ngram_size: int = 3
+    """N-gram size for hard repeat blocking.
+
+    Forwarded to faster-whisper's ``no_repeat_ngram_size``.  Prevents any
+    n-word phrase from appearing twice in the same output.  0 = disabled.
+    Vexa default: 3.
+    """
+
 
 @dataclass
 class ProviderConfig:

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import {
   getConfig,
   getStorageInfo,
@@ -10,7 +11,7 @@ import {
   setThreshold,
   setUnloadAfterStop,
 } from '../api/config'
-import { loadModel, unloadModel } from '../api/models'
+import { getModelStatus, loadModel, unloadModel } from '../api/models'
 import type { ApiConfig } from '../types/api'
 import { queryKeys } from './keys'
 
@@ -19,6 +20,32 @@ export function useConfigQuery() {
     queryKey: queryKeys.config.current(),
     queryFn: getConfig,
   })
+}
+
+/** Polls model status while any provider is loading — replaces SSE. */
+export function useModelProgress(kind: string) {
+  const statusQuery = useQuery({
+    queryKey: ['models', 'status'],
+    queryFn: getModelStatus,
+    refetchInterval: (query) => {
+      const status = query.state.data
+      if (!status) return 1000
+      const provider = status[kind]
+      if (!provider || provider.state !== 'LOADING') return false
+      return 1000
+    },
+  })
+  const provider = statusQuery.data?.[kind]
+  return useMemo(() => {
+    if (!provider || provider.state !== 'LOADING') return null
+    return { progress: _interpProgress(provider.state), state: provider.state, error: provider.error }
+  }, [provider])
+}
+
+function _interpProgress(state: string): number {
+  if (state === 'LOADED') return 1.0
+  if (state === 'LOADING') return 0.05
+  return 0.0
 }
 
 export function useSelectProviderMutation() {

@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { subscribeModelProgress } from '../api/models'
 import {
   useBlocklistEnabledMutation,
   useConfigQuery,
   useElevenLabsTokenMutation,
   useModelLifecycleMutation,
+  useModelProgress,
   usePreloadOnStartMutation,
   useSelectProviderMutation,
   useSetPipelineMutation,
@@ -349,8 +349,6 @@ function providerCardState(
   return 'AVAILABLE'
 }
 
-const PROVIDER_KINDS: ProviderKind[] = ['asr', 'embedding', 'diarization']
-
 export function Settings() {
   const { t, i18n: i18nInstance } = useTranslation()
   const [theme, setThemeState] = useState<string>(() => {
@@ -373,7 +371,17 @@ export function Settings() {
   const [editingToken, setEditingToken] = useState(false)
   const [tokenDraft, setTokenDraft] = useState('')
   const [modelAction, setModelAction] = useState<ProviderKind | null>(null)
-  const [progressByKind, setProgressByKind] = useState<Record<string, number>>({})
+  const diarProgress = useModelProgress('diarization')
+  const asrProgress = useModelProgress('asr')
+  const embProgress = useModelProgress('embedding')
+  const vadProgress = useModelProgress('vad')
+
+  const progressByKind: Record<string, number> = {
+    diarization: diarProgress?.progress ?? 0.0,
+    asr: asrProgress?.progress ?? 0.0,
+    embedding: embProgress?.progress ?? 0.0,
+    vad: vadProgress?.progress ?? 0.0,
+  }
 
   // VAD pipeline local state
   const [vadOnset, setVadOnset] = useState(0.60)
@@ -384,6 +392,12 @@ export function Settings() {
   const [vadMinUtt, setVadMinUtt] = useState(300)
   const [vadMaxUtt, setVadMaxUtt] = useState(10_000)
   const [savingPipeline, setSavingPipeline] = useState(false)
+
+  // ASR quality gate local state
+  const [asrNoSpeech, setAsrNoSpeech] = useState(0.6)
+  const [asrCompression, setAsrCompression] = useState(2.4)
+  const [asrRepPenalty, setAsrRepPenalty] = useState(1.1)
+  const [asrNgram, setAsrNgram] = useState(3)
 
   const configQuery = useConfigQuery()
   const storageQuery = useStorageInfoQuery()
@@ -411,6 +425,10 @@ export function Settings() {
       setVadPadPost(config.vad_speech_pad_post_ms)
       setVadMinUtt(config.vad_min_utterance_ms)
       setVadMaxUtt(config.vad_max_utterance_ms)
+      setAsrNoSpeech(config.asr_no_speech_threshold)
+      setAsrCompression(config.asr_compression_ratio_threshold)
+      setAsrRepPenalty(config.asr_repetition_penalty)
+      setAsrNgram(config.asr_no_repeat_ngram_size)
       setActionError(null)
     }
   }, [config])
@@ -422,38 +440,6 @@ export function Settings() {
     }
     return next
   }, [config])
-
-  const refetchConfig = configQuery.refetch
-  const loadingKinds = PROVIDER_KINDS.filter((k) => providers[k]?.state === 'LOADING')
-
-  // Subscribe to SSE progress only while at least one provider is LOADING.
-  // Each subscription closes itself when the stream emits its final snapshot.
-  const activeStreams = useRef<Set<string>>(new Set())
-  useEffect(() => {
-    const disposers: Array<() => void> = []
-    for (const kind of loadingKinds) {
-      if (activeStreams.current.has(kind)) continue
-      activeStreams.current.add(kind)
-      const dispose = subscribeModelProgress(
-        kind,
-        (event) => {
-          setProgressByKind((prev) => ({ ...prev, [kind]: event.progress }))
-          if (event.state === 'LOADED' || event.state === 'ERROR' || event.state === 'UNLOADED') {
-            activeStreams.current.delete(kind)
-            void refetchConfig()
-          }
-        },
-        () => {
-          activeStreams.current.delete(kind)
-          void refetchConfig()
-        },
-      )
-      disposers.push(dispose)
-    }
-    return () => {
-      for (const dispose of disposers) dispose()
-    }
-  }, [loadingKinds, refetchConfig])
 
   const asrProvider = providers.asr
   const embeddingProvider = providers.embedding
@@ -940,6 +926,90 @@ export function Settings() {
 
             <div style={stS.inlineHint}>
               {savingPipeline ? t('settings.saving') : t('settings.vadRequiresRestart')}
+            </div>
+
+            <Divider />
+
+            <SectionTitle mt={20}>{t('settings.asrQualitySection')}</SectionTitle>
+
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.asrNoSpeechLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.asrNoSpeechDesc')}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="range"
+                  min={1} max={100}
+                  value={Math.round(asrNoSpeech * 100)}
+                  disabled={savingPipeline}
+                  onChange={(e) => setAsrNoSpeech(Number(e.target.value) / 100)}
+                  onPointerUp={() => commitPipeline({ asr_no_speech_threshold: asrNoSpeech })}
+                  style={{ width: 120, accentColor: 'var(--accent)' }}
+                />
+                <span style={stS.paramValue}>{asrNoSpeech.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.asrCompressionLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.asrCompressionDesc')}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="range"
+                  min={100} max={500}
+                  value={Math.round(asrCompression * 100)}
+                  disabled={savingPipeline}
+                  onChange={(e) => setAsrCompression(Number(e.target.value) / 100)}
+                  onPointerUp={() => commitPipeline({ asr_compression_ratio_threshold: asrCompression })}
+                  style={{ width: 120, accentColor: 'var(--amber)' }}
+                />
+                <span style={stS.paramValue}>{asrCompression.toFixed(1)}</span>
+              </div>
+            </div>
+
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.asrRepPenaltyLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.asrRepPenaltyDesc')}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="range"
+                  min={100} max={200}
+                  value={Math.round(asrRepPenalty * 100)}
+                  disabled={savingPipeline}
+                  onChange={(e) => setAsrRepPenalty(Number(e.target.value) / 100)}
+                  onPointerUp={() => commitPipeline({ asr_repetition_penalty: asrRepPenalty })}
+                  style={{ width: 120, accentColor: 'var(--amber)' }}
+                />
+                <span style={stS.paramValue}>{asrRepPenalty.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.asrNgramLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.asrNgramDesc')}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="range"
+                  min={0} max={10}
+                  value={asrNgram}
+                  disabled={savingPipeline}
+                  onChange={(e) => setAsrNgram(Number(e.target.value))}
+                  onPointerUp={() => commitPipeline({ asr_no_repeat_ngram_size: asrNgram })}
+                  style={{ width: 100, accentColor: 'var(--amber)' }}
+                />
+                <span style={{ ...stS.paramValue, width: 24 }}>{asrNgram}</span>
+              </div>
+            </div>
+
+            <div style={stS.inlineHint}>
+              {savingPipeline ? t('settings.saving') : t('settings.asrParamsHint')}
             </div>
           </>
         )}

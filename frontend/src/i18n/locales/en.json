@@ -216,7 +216,17 @@
     "vadMinUttDesc": "Utterances shorter than this are discarded as noise (cough, click). Recommended: 200–500 ms.",
     "vadMaxUttLabel": "Maximum utterance (ms)",
     "vadMaxUttDesc": "Force-split monologues at this length to bound memory and ASR latency. Shorter = better diarization accuracy. Recommended: 8,000–15,000 ms.",
-    "vadRequiresRestart": "VAD parameters take effect on the next recording. No restart required."
+    "vadRequiresRestart": "VAD parameters take effect on the next recording. No restart required.",
+    "asrQualitySection": "ASR — quality gates",
+    "asrNoSpeechLabel": "No-speech threshold",
+    "asrNoSpeechDesc": "Whisper's no_speech_prob above this value discards the output as silence. Lower = more aggressive filtering of quiet/non-speech audio. Vexa default: 0.6.",
+    "asrCompressionLabel": "Compression ratio threshold",
+    "asrCompressionDesc": "Segments with compression_ratio above this are discarded as repetitive/hallucination output. Lower = stricter filtering. Vexa default: 2.4.",
+    "asrRepPenaltyLabel": "Repetition penalty",
+    "asrRepPenaltyDesc": "Penalizes token repetition during decoding. 1.0 = no penalty; higher values discourage repeats. Vexa default: 1.1.",
+    "asrNgramLabel": "N-gram repeat block",
+    "asrNgramDesc": "Hard-blocks any n-word phrase from appearing twice in the same output. 0 = disabled. Vexa default: 3.",
+    "asrParamsHint": "ASR quality gates take effect on the next utterance. No restart required."
   },
   "api": {
     "backendUnavailable": "Backend not responding. Check that the server is running on 127.0.0.1:8765.",

@@ -112,6 +112,10 @@ export interface ApiConfig {
   providers: ApiProviderStatus[]
   blocklist_enabled: boolean
   elevenlabs_api_token_masked: string
+  asr_no_speech_threshold: number
+  asr_compression_ratio_threshold: number
+  asr_repetition_penalty: number
+  asr_no_repeat_ngram_size: number
 }
 
 export type ApiModelStatusMap = Record<string, ApiProviderStatus>

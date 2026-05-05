@@ -186,6 +186,10 @@ class ConfigOut(BaseModel):
     providers: list[ProviderStatus]
     blocklist_enabled: bool = False
     elevenlabs_api_token_masked: str = "not set"
+    asr_no_speech_threshold: float = 0.6
+    asr_compression_ratio_threshold: float = 2.4
+    asr_repetition_penalty: float = 1.1
+    asr_no_repeat_ngram_size: int = 3
 
 
 class ThresholdUpdate(BaseModel):

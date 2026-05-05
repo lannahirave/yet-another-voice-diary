@@ -79,6 +79,10 @@ def get_config_rt(request: Request):
         device=cfg.providers.device,
         blocklist_enabled=cfg.pipeline.blocklist_enabled,
         elevenlabs_api_token_masked=_mask_token(cfg.providers.elevenlabs_api_token),
+        asr_no_speech_threshold=cfg.pipeline.asr_no_speech_threshold,
+        asr_compression_ratio_threshold=cfg.pipeline.asr_compression_ratio_threshold,
+        asr_repetition_penalty=cfg.pipeline.asr_repetition_penalty,
+        asr_no_repeat_ngram_size=cfg.pipeline.asr_no_repeat_ngram_size,
         providers=[
             _provider_status(kind, provider) for kind, provider in providers.items()
         ],

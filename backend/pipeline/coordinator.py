@@ -296,6 +296,13 @@ class PipelineCoordinator:
         try:
             if hasattr(self.asr, "blocklist_enabled"):
                 self.asr.blocklist_enabled = self.config.blocklist_enabled
+            if hasattr(self.asr, "no_speech_threshold"):
+                self.asr.no_speech_threshold = self.config.asr_no_speech_threshold
+                self.asr.compression_ratio_threshold = (
+                    self.config.asr_compression_ratio_threshold
+                )
+                self.asr.repetition_penalty = self.config.asr_repetition_penalty
+                self.asr.no_repeat_ngram_size = self.config.asr_no_repeat_ngram_size
             utterance = self.asr.transcribe(audio, language_hint)
         except Exception as exc:
             cuda_after_error = self._cuda_memory_snapshot()

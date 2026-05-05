@@ -34,6 +34,10 @@ class WhisperASRProvider:
         compute_type: Optional[str] = None,
         beam_size: int = 1,
         cpu_threads: int = 0,
+        no_speech_threshold: float = 0.6,
+        compression_ratio_threshold: float = 2.4,
+        repetition_penalty: float = 1.1,
+        no_repeat_ngram_size: int = 3,
     ) -> None:
         self.model_id = model_size or model_id
         # legacy alias — existing test/code may read ``model_size``
@@ -42,6 +46,10 @@ class WhisperASRProvider:
         self.compute_type = compute_type
         self.beam_size = beam_size
         self.cpu_threads = cpu_threads
+        self.no_speech_threshold = no_speech_threshold
+        self.compression_ratio_threshold = compression_ratio_threshold
+        self.repetition_penalty = repetition_penalty
+        self.no_repeat_ngram_size = no_repeat_ngram_size
         self._model: Optional[Any] = None
         self._backend: Optional[str] = None
         self._state = "UNLOADED"
@@ -270,11 +278,44 @@ class WhisperASRProvider:
                 beam_size=self.beam_size,
                 vad_filter=False,  # we run VAD upstream in the pipeline
                 condition_on_previous_text=False,
+                no_speech_threshold=self.no_speech_threshold,
+                compression_ratio_threshold=self.compression_ratio_threshold,
+                repetition_penalty=self.repetition_penalty,
+                no_repeat_ngram_size=self.no_repeat_ngram_size,
             )
             segments = list(segments_iter)
             text = " ".join(s.text.strip() for s in segments if s.text).strip()
             detected_lang: Optional[str] = info.language
             confidence = float(info.language_probability or 0.0)
+
+            # Post-inference quality gate — discard silent / repetitive output
+            # (Vexa pattern: no_speech_prob ≤ 0.5, compression_ratio ≤ 2.4)
+            if not text:
+                return Utterance(
+                    transcript="", language=detected_lang, confidence=0.0,
+                )
+            no_speech_prob = float(getattr(info, "no_speech_prob", 0.0) or 0.0)
+            avg_logprob = float(getattr(info, "avg_log_prob", 0.0) or 0.0)
+            if no_speech_prob > 0.5 and avg_logprob < -0.7:
+                log.info(
+                    "ASR quality gate: silence detected no_speech_prob=%.3f avg_logprob=%.3f",
+                    no_speech_prob, avg_logprob,
+                )
+                return Utterance(
+                    transcript="", language=detected_lang, confidence=0.0,
+                )
+            max_cr = max(
+                (float(getattr(s, "compression_ratio", 0.0)) for s in segments),
+                default=0.0,
+            )
+            if max_cr > self.compression_ratio_threshold:
+                log.info(
+                    "ASR quality gate: repetitive output compression_ratio=%.3f threshold=%.3f",
+                    max_cr, self.compression_ratio_threshold,
+                )
+                return Utterance(
+                    transcript="", language=detected_lang, confidence=0.0,
+                )
 
             if self.blocklist_enabled and text:
                 if self._is_blocked(text, detected_lang):

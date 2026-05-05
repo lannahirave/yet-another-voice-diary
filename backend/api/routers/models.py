@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 # Approximate worst-case load duration (s) used for progress interpolation when
 # the underlying provider has no real progress hook. Progress climbs linearly
 # toward 0.95 over this window, then jumps to 1.0 on completion.
-_LOAD_RAMP_SECONDS = 45.0
+_LOAD_RAMP_SECONDS = 10.0
 
 
 @dataclass
