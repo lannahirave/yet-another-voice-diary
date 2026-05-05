@@ -247,8 +247,9 @@ class PipelineCoordinator:
 
         cuda_before = self._cuda_memory_snapshot()
         _info(
-            "whisper transcription started key=%s samples=%d duration_ms=%d duration_s=%.3f sample_rate=%d cuda=%s",
+            "whisper transcription started key=%s model=%s samples=%d duration_ms=%d duration_s=%.3f sample_rate=%d cuda=%s",
             processing_key,
+            getattr(self.asr, "model_id", "?"),
             int(len(audio)),
             int(duration_ms),
             float(duration_s),
@@ -285,8 +286,9 @@ class PipelineCoordinator:
         asr_ms = (time.perf_counter() - asr_t0) * 1000.0
         cuda_after = self._cuda_memory_snapshot()
         _info(
-            "whisper transcription finished key=%s utterance_id=%s transcript_chars=%d language=%s confidence=%.3f asr_ms=%.2f cuda=%s",
+            "whisper transcription finished key=%s model=%s utterance_id=%s transcript_chars=%d language=%s confidence=%.3f asr_ms=%.2f cuda=%s",
             processing_key,
+            getattr(self.asr, "model_id", "?"),
             utterance.id,
             len(utterance.transcript or ""),
             utterance.language,
