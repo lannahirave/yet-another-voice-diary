@@ -199,6 +199,7 @@ def test_process_chunk_builds_one_segment_per_diarized_speaker():
         MultiSpeakerDiarizationProvider(),
         embedding,
         vad_processor=FakeVADProcessor(),
+        source="system",
     )
     session = RecordingSession(id="sess-speakers", language_hint="uk")
     coordinator.start_session(session)
@@ -331,6 +332,7 @@ def test_pipeline_still_emits_utterance_when_speaker_enrichment_fails():
         BrokenDiarizationProvider(),
         FakeEmbeddingProvider(),
         vad_processor=FakeVADProcessor(),
+        source="system",
     )
     session = RecordingSession(id="sess-diarization-fallback")
     coordinator.start_session(session)

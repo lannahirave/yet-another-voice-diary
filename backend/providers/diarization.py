@@ -10,6 +10,7 @@ from typing import Any, Callable, Optional
 import warnings
 
 import numpy as np
+import torch  # type: ignore[import-untyped]
 
 from ..config import normalize_diarization_model_id
 from .devices import normalize_indexed_cuda_device
@@ -380,8 +381,6 @@ class PyAnnoteDiarizationProvider:
         if self._model is None:
             self.load()
 
-        import torch  # type: ignore[import-untyped]
-
         assert self._model is not None
         try:
             waveform = torch.from_numpy(np.asarray(audio, dtype=np.float32)).unsqueeze(0)
@@ -390,7 +389,7 @@ class PyAnnoteDiarizationProvider:
                 if sys.platform.startswith("win")
                 else nullcontext()
             )
-            with speechbrain_compat:
+            with speechbrain_compat, torch.no_grad():
                 diarization = self._model(
                     {"waveform": waveform, "sample_rate": sample_rate}
                 )
@@ -502,11 +501,12 @@ class NeMoSortformerDiarizationProvider:
 
         assert self._model is not None
         try:
-            predicted = self._model.diarize(
-                audio=[np.ascontiguousarray(audio, dtype=np.float32)],
-                batch_size=1,
-                sample_rate=sample_rate,
-            )
+            with torch.no_grad():
+                predicted = self._model.diarize(
+                    audio=[np.ascontiguousarray(audio, dtype=np.float32)],
+                    batch_size=1,
+                    sample_rate=sample_rate,
+                )
         except Exception as exc:
             self._error = f"diarization inference failed: {exc}"
             self._state = "ERROR"

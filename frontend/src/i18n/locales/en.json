@@ -6,7 +6,8 @@
     "cancel": "Cancel",
     "skip": "Skip",
     "loading": "Loading…",
-    "language": "Language"
+    "language": "Language",
+    "you": "You"
   },
   "sidebar": {
     "groupRecords": "RECORDS",
@@ -145,9 +146,9 @@
     "unloadAfterStop": "Unload models after \"Stop\"",
     "unloadAfterStopDesc": "Frees RAM, but the next recording starts with a 3–10 s delay",
     "preloadOnStart": "Preload models when app starts",
-    "preloadOnStartDesc": "Loads ML models in the background so they are ready before your first recording. Increases startup time by 10–30 s.",
+    "preloadOnStartDesc": "Loads ML models in the background so they are ready before your first recording.",
     "blocklistEnabled": "Block Whisper hallucinations",
-    "blocklistEnabledDesc": "Drops transcripts matching known hallucination patterns (YouTube sign-offs, subtitle boilerplate, phantom music captions). 348 English + 8 Ukrainian + 97 Russian patterns.",
+    "blocklistEnabledDesc": "Drops transcripts matching known hallucination patterns (YouTube sign-offs, subtitle boilerplate, phantom music captions).",
     "thresholdLabel": "Identification threshold",
     "thresholdDesc": "Below 0.45 the app starts auto-identifying aggressively and false matches rise. Above 0.70 many real speakers stay in the unknown queue.",
     "thresholdHint": "Threshold is read from the backend and saved immediately on change",

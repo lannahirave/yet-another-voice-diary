@@ -125,6 +125,13 @@ export class AudioWebSocket {
       // Don't close — backend flushes the last buffered utterance
       // (which can take seconds of ASR inference), then closes itself.
     }
+    if (this.ws) {
+      this.ws.onopen = null
+      this.ws.onmessage = null
+      this.ws.onerror = null
+      this.ws.onclose = null
+    }
+    this.handlers.clear()
     this.ws = null
   }
 }

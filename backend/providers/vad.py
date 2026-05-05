@@ -444,7 +444,8 @@ class _SileroVadSession(VadSession):
         """Raw Silero speech probability for a single frame."""
         import torch
         tensor = torch.from_numpy(frame.copy()).float()
-        prob = self._p._model(tensor, self._p.sample_rate)
+        with torch.no_grad():
+            prob = self._p._model(tensor, self._p.sample_rate)
         if hasattr(prob, "item"):
             return float(prob.item())
         return float(prob)

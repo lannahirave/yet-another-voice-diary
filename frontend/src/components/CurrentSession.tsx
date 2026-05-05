@@ -67,7 +67,9 @@ const UtteranceRow = memo(function UtteranceRow({
   const { contactById } = useContactsData()
   const contact = contactById(utt.speakerId)
   const sourceLabel = utt.source === 'system' ? 'SYS' : utt.source === 'mic' ? 'MIC' : null
-  const isUnknown = !contact && !!utt.speakerSegmentId && !isLive
+  const isMicSelf = utt.source === 'mic'
+  const isUnknown = !contact && !!utt.speakerSegmentId && !isLive && !isMicSelf
+  const displayName = contact ? contact.name : isMicSelf ? t('common.you') : t('common.unknown')
 
   const [pickerOpen, setPickerOpen] = useState(false)
   const [candidates, setCandidates] = useState<{ contactId: string; contactName: string; score: number }[]>([])
@@ -114,7 +116,7 @@ const UtteranceRow = memo(function UtteranceRow({
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={csS.uttMeta}>
           <span style={{ ...csS.uttName, color: contact ? contact.color : 'var(--text-muted)', fontStyle: contact ? 'normal' : 'italic' }}>
-            {contact ? contact.name : t('common.unknown')}
+            {displayName}
           </span>
           {isUnknown && (
             <button
@@ -338,6 +340,7 @@ export function CurrentSession({
   const stopAudio = () => {
     micLevelRef.current = SILENCE_SNAPSHOT
     sysLevelRef.current = SILENCE_SNAPSHOT
+    if (processorRef.current) processorRef.current.onaudioprocess = null
     try {
       processorRef.current?.disconnect()
     } catch {
@@ -355,6 +358,7 @@ export function CurrentSession({
     audioCtxRef.current = null
     streamRef.current = null
 
+    if (sysProcessorRef.current) sysProcessorRef.current.onaudioprocess = null
     try {
       sysProcessorRef.current?.disconnect()
     } catch {

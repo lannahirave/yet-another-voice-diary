@@ -310,35 +310,39 @@ class PipelineCoordinator:
             return (utterance, [], None), errors
 
         diarized_segments: list[DiarizationSegment] = []
-        _info(
-            "diarization started key=%s samples=%d duration_ms=%d cuda=%s",
-            processing_key,
-            int(len(audio)),
-            int(duration_ms),
-            self._cuda_memory_snapshot(),
-        )
-        diar_t0 = time.perf_counter()
-        try:
-            diarized_segments = self.diarization.segment(audio)
-            diar_ms = (time.perf_counter() - diar_t0) * 1000.0
+        if self.source == "mic":
+            # Mic is always a single speaker — skip diarization entirely.
+            pass
+        else:
             _info(
-                "diarization finished key=%s segments=%d diarization_ms=%.2f cuda=%s",
+                "diarization started key=%s samples=%d duration_ms=%d cuda=%s",
                 processing_key,
-                len(diarized_segments),
-                float(diar_ms),
+                int(len(audio)),
+                int(duration_ms),
                 self._cuda_memory_snapshot(),
             )
-        except Exception as exc:
-            diar_ms = (time.perf_counter() - diar_t0) * 1000.0
-            log.exception("diarization failed; continuing with full-utterance embedding")
-            _error(
-                "diarization failed key=%s diarization_ms=%.2f cuda=%s error=%s",
-                processing_key,
-                float(diar_ms),
-                self._cuda_memory_snapshot(),
-                exc,
-            )
-            errors.append({"code": "DIARIZATION_FAILURE", "component": "diarization", "message": str(exc)})
+            diar_t0 = time.perf_counter()
+            try:
+                diarized_segments = self.diarization.segment(audio)
+                diar_ms = (time.perf_counter() - diar_t0) * 1000.0
+                _info(
+                    "diarization finished key=%s segments=%d diarization_ms=%.2f cuda=%s",
+                    processing_key,
+                    len(diarized_segments),
+                    float(diar_ms),
+                    self._cuda_memory_snapshot(),
+                )
+            except Exception as exc:
+                diar_ms = (time.perf_counter() - diar_t0) * 1000.0
+                log.exception("diarization failed; continuing with full-utterance embedding")
+                _error(
+                    "diarization failed key=%s diarization_ms=%.2f cuda=%s error=%s",
+                    processing_key,
+                    float(diar_ms),
+                    self._cuda_memory_snapshot(),
+                    exc,
+                )
+                errors.append({"code": "DIARIZATION_FAILURE", "component": "diarization", "message": str(exc)})
 
         group_t0 = time.perf_counter()
         speaker_groups = self._speaker_groups(audio, sample_rate, diarized_segments)
