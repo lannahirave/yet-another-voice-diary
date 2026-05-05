@@ -8,7 +8,7 @@ from backend.config import BackendConfig, DatabaseConfig
 from backend.identification.matching import SimilarityMatcher
 from backend.models import RecordingSession, Utterance
 from backend.pipeline.coordinator import PipelineCoordinator
-from backend.pipeline.vad import VADSegment
+from backend.providers.vad import SpeechSegment
 from backend.storage.database import Database
 
 
@@ -36,11 +36,55 @@ class FakeEmbeddingProvider:
 
 
 class FakeVADProcessor:
-    def reset(self) -> None:
-        pass
+    def __init__(self) -> None:
+        self._buffer: list[np.ndarray] = []
+        self._ended = 0
+        self._sr: int | None = None
 
-    def process(self, audio: np.ndarray, sample_rate: int) -> VADSegment:
-        return VADSegment(0, int(len(audio) / sample_rate * 1000), bool(np.any(audio)))
+    def reset(self) -> None:
+        self._buffer = []
+        self._ended = 0
+
+    def process(
+        self, audio: np.ndarray, sample_rate: int
+    ) -> SpeechSegment | None:
+        dur = max(1, int(round((len(audio) / sample_rate) * 1000)))
+        self._ended += dur
+        if bool(np.any(audio)):
+            self._buffer.append(audio.copy())
+            if self._sr is None:
+                self._sr = sample_rate
+            return None
+        if not self._buffer:
+            return None
+        concat = np.concatenate(self._buffer)
+        duration = self._ended
+        seg = SpeechSegment(
+            audio=np.ascontiguousarray(concat, dtype=np.float32),
+            sample_rate=self._sr or sample_rate,
+            started_ms=0,
+            ended_ms=self._ended,
+            duration_ms=duration,
+        )
+        self._buffer = []
+        self._ended = 0
+        return seg
+
+    def finalize(self) -> SpeechSegment | None:
+        if not self._buffer:
+            return None
+        concat = np.concatenate(self._buffer)
+        duration = self._ended
+        seg = SpeechSegment(
+            audio=np.ascontiguousarray(concat, dtype=np.float32),
+            sample_rate=self._sr or 16000,
+            started_ms=0,
+            ended_ms=self._ended,
+            duration_ms=duration,
+        )
+        self._buffer = []
+        self._ended = 0
+        return seg
 
 
 def test_end_to_end_session():

@@ -9,8 +9,9 @@ from __future__ import annotations
 
 from ..providers.vad import (
     SileroVADProvider as VADProcessor,
+    SpeechSegment,
     VADSegment,
     create_vad_provider,
 )
 
-__all__ = ["VADProcessor", "VADSegment", "create_vad_provider"]
+__all__ = ["SpeechSegment", "VADProcessor", "VADSegment", "create_vad_provider"]

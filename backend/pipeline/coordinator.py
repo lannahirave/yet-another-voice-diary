@@ -11,7 +11,7 @@ from ..config import PipelineConfig
 from ..models import RecordingSession, SpeakerSegment, Utterance
 from ..providers.base import ASRProvider, DiarizationProvider, EmbeddingProvider
 from ..providers.diarization import DiarizationSegment
-from ..providers.vad import VADSegment
+from ..providers.vad import SpeechSegment
 
 # Dedicated thread pool for ML inference — keeps heavy model calls (ASR,
 # diarization, embedding) from competing with HTTP handler threads in
@@ -61,6 +61,8 @@ class PipelineCoordinator:
                 speech_pad_post_ms=config.vad_speech_pad_post_ms,
             )
             self.vad = _vad.create_session()
+        if hasattr(self.vad, "max_utterance_ms"):
+            self.vad.max_utterance_ms = config.vad_max_utterance_ms
         self.source = source
 
         self._current_session: Optional[RecordingSession] = None
@@ -73,12 +75,6 @@ class PipelineCoordinator:
         }
         self._pending_tasks: set[asyncio.Task] = set()  # type: ignore
         self._session_elapsed_ms = 0
-        self._buffered_audio: list[np.ndarray] = []
-        self._buffer_started_ms: Optional[int] = None
-        self._buffer_ended_ms = 0
-        self._buffer_sample_rate: Optional[int] = None
-        self._in_speech: bool = False
-        self._buffered_speech_ms: int = 0
 
     def on(self, event: str, callback: Callable):
         """Register event callback."""
@@ -143,62 +139,25 @@ class PipelineCoordinator:
         """Start a new recording session."""
         self._current_session = session
         self._session_elapsed_ms = 0
-        self._in_speech = False
-        self._reset_buffer()
         self.vad.reset()
 
     def end_session(self) -> Optional[RecordingSession]:
         """End the current session.
 
-        Only flushes the buffer when it crosses ``vad_min_utterance_ms`` —
-        same floor as the falling-edge path. A 100-300 ms tail at session
-        stop is almost always a click, key release or breath, and pushing
-        it through diarization + embedding produces a degenerate segment
-        that pollutes the unknown queue and the voice-profile gallery.
-
-        Inference runs synchronously — the recording is already stopped,
-        so briefly blocking the event loop for a final utterance flush
+        Delegates final buffer flush to the VAD layer which gates on
+        its internal ``_speech_duration_ms``.  Inference runs synchronously —
+        the recording is already stopped, so briefly blocking the event loop
         is acceptable.
         """
         session = self._current_session
-        if (
-            session is not None
-            and self._buffered_speech_ms >= self.config.vad_min_utterance_ms
-        ):
-            self._flush_buffered_utterance_sync()
+        if session is not None:
+            seg = self.vad.finalize()
+            if seg is not None and seg.duration_ms >= self.config.vad_min_utterance_ms:
+                self._flush_speech_segment_sync(seg)
         self._current_session = None
         self._session_elapsed_ms = 0
-        self._in_speech = False
-        self._reset_buffer()
         self.vad.reset()
         return session
-
-    @staticmethod
-    def _chunk_duration_ms(audio: np.ndarray, sample_rate: int) -> int:
-        if sample_rate <= 0:
-            return 0
-        return max(1, int(round((len(audio) / sample_rate) * 1000)))
-
-    def _reset_buffer(self) -> None:
-        self._buffered_audio = []
-        self._buffer_started_ms = None
-        self._buffer_ended_ms = 0
-        self._buffer_sample_rate = None
-        self._buffered_speech_ms = 0
-
-    def _buffer_chunk(
-        self,
-        audio: np.ndarray,
-        started_ms: int,
-        ended_ms: int,
-        sample_rate: int,
-    ) -> None:
-        if self._buffer_started_ms is None:
-            self._buffer_started_ms = started_ms
-        if self._buffer_sample_rate is None:
-            self._buffer_sample_rate = sample_rate
-        self._buffered_audio.append(np.ascontiguousarray(audio, dtype=np.float32))
-        self._buffer_ended_ms = ended_ms
 
     @staticmethod
     def _slice_audio(
@@ -444,11 +403,15 @@ class PipelineCoordinator:
         utterance: Utterance,
         speaker_segments: list[SpeakerSegment],
         primary_segment: Optional[SpeakerSegment],
+        audio: np.ndarray,
+        started_ms: int,
+        ended_ms: int,
+        sample_rate: int,
     ) -> None:
         """Attach session metadata to the utterance and emit callbacks."""
         utterance.session_id = self._current_session.id
-        utterance.started_ms = self._buffer_started_ms or 0
-        utterance.ended_ms = self._buffer_ended_ms
+        utterance.started_ms = started_ms
+        utterance.ended_ms = ended_ms
         utterance.source = self.source
         if primary_segment is not None:
             utterance.speaker_segment_id = primary_segment.id
@@ -457,131 +420,93 @@ class PipelineCoordinator:
             self._emit("speaker_segment", speaker_segment)
         self._emit("utterance", utterance)
 
-    async def _flush_buffered_utterance(self) -> None:
-        """Async flush — inference offloaded to thread pool so the event
-        loop stays responsive during active recording."""
-        if not self._current_session or not self._buffered_audio:
-            self._reset_buffer()
+        if self.has_listeners("debug:audio"):
+            self._emit(
+                "debug:audio",
+                {
+                    "audio": audio,
+                    "started_ms": started_ms,
+                    "ended_ms": ended_ms,
+                    "sample_rate": sample_rate,
+                    "transcript": utterance.transcript,
+                    "language": utterance.language,
+                    "confidence": utterance.confidence,
+                    "source": self.source,
+                    "speaker_segments": [
+                        {
+                            "id": seg.id,
+                            "speaker": getattr(seg, "speaker", ""),
+                            "contact_id": seg.contact_id,
+                            "diarization_model_id": getattr(seg, "diarization_model_id", ""),
+                        }
+                        for seg in speaker_segments
+                    ],
+                },
+            )
+
+    async def _flush_speech_segment(self, seg: SpeechSegment) -> None:
+        """Async flush — inference offloaded to thread pool."""
+        if not self._current_session:
             return
 
-        audio = np.concatenate(self._buffered_audio)
-        sample_rate = self._buffer_sample_rate or 16000
         loop = asyncio.get_running_loop()
         (utterance, speaker_segments, primary_segment), errors = (
             await loop.run_in_executor(
                 _inference_pool,
                 self._infer_utterance,
-                audio,
+                seg.audio,
                 self._current_session.language_hint,
-                sample_rate,
+                seg.sample_rate,
                 self._current_session.id,
-                self._buffer_started_ms or 0,
-                self._buffer_ended_ms,
+                seg.started_ms,
+                seg.ended_ms,
             )
         )
         for err_data in errors:
-            err_data["ms"] = self._buffer_started_ms or 0
+            err_data["ms"] = seg.started_ms
             self._emit("error", err_data)
         if not utterance.transcript.strip():
-            self._reset_buffer()
             return
-        self._attach_and_emit(utterance, speaker_segments, primary_segment)
-        if self.has_listeners("debug:audio"):
-            self._emit(
-                "debug:audio",
-                {
-                    "audio": audio,
-                    "started_ms": self._buffer_started_ms or 0,
-                    "ended_ms": self._buffer_ended_ms,
-                    "sample_rate": self._buffer_sample_rate or 16000,
-                    "transcript": utterance.transcript,
-                    "language": utterance.language,
-                    "confidence": utterance.confidence,
-                    "source": self.source,
-                    "speaker_segments": [
-                        {
-                            "id": seg.id,
-                            "speaker": getattr(seg, "speaker", ""),
-                            "contact_id": seg.contact_id,
-                            "diarization_model_id": getattr(seg, "diarization_model_id", ""),
-                        }
-                        for seg in speaker_segments
-                    ],
-                },
-            )
-        self._reset_buffer()
+        self._attach_and_emit(
+            utterance, speaker_segments, primary_segment,
+            seg.audio, seg.started_ms, seg.ended_ms, seg.sample_rate,
+        )
 
-    def _flush_buffered_utterance_sync(self) -> None:
-        """Synchronous flush — inference runs on the calling thread.
-        Used during ``end_session`` where the recording is already
-        stopped and blocking the event loop briefly is acceptable."""
-        if not self._current_session or not self._buffered_audio:
-            self._reset_buffer()
+    def _flush_speech_segment_sync(self, seg: SpeechSegment) -> None:
+        """Synchronous flush — runs on the calling thread for end_session."""
+        if not self._current_session:
             return
 
-        audio = np.concatenate(self._buffered_audio)
-        sample_rate = self._buffer_sample_rate or 16000
         (utterance, speaker_segments, primary_segment), errors = (
             self._infer_utterance(
-                audio,
+                seg.audio,
                 self._current_session.language_hint,
-                sample_rate,
+                seg.sample_rate,
                 self._current_session.id,
-                self._buffer_started_ms or 0,
-                self._buffer_ended_ms,
+                seg.started_ms,
+                seg.ended_ms,
             )
         )
         for err_data in errors:
-            err_data["ms"] = self._buffer_started_ms or 0
+            err_data["ms"] = seg.started_ms
             self._emit("error", err_data)
         if not utterance.transcript.strip():
-            self._reset_buffer()
             return
-        self._attach_and_emit(utterance, speaker_segments, primary_segment)
-        if self.has_listeners("debug:audio"):
-            self._emit(
-                "debug:audio",
-                {
-                    "audio": audio,
-                    "started_ms": self._buffer_started_ms or 0,
-                    "ended_ms": self._buffer_ended_ms,
-                    "sample_rate": self._buffer_sample_rate or 16000,
-                    "transcript": utterance.transcript,
-                    "language": utterance.language,
-                    "confidence": utterance.confidence,
-                    "source": self.source,
-                    "speaker_segments": [
-                        {
-                            "id": seg.id,
-                            "speaker": getattr(seg, "speaker", ""),
-                            "contact_id": seg.contact_id,
-                            "diarization_model_id": getattr(seg, "diarization_model_id", ""),
-                        }
-                        for seg in speaker_segments
-                    ],
-                },
-            )
-        self._reset_buffer()
+        self._attach_and_emit(
+            utterance, speaker_segments, primary_segment,
+            seg.audio, seg.started_ms, seg.ended_ms, seg.sample_rate,
+        )
 
     # ---- session lifecycle & streaming ---------------------------------
 
     async def process_chunk(self, audio: np.ndarray, sample_rate: int = 16000):
         """Process an audio chunk through the pipeline.
 
-        Endpointing follows the standard streaming-ASR state machine:
-
-        * the VAD (Silero, stateful) provides a *current* speech/silence
-          classification per chunk — its own ``min_silence_duration_ms`` and
-          ``speech_pad_ms`` already debounce micro-pauses inside speech;
-        * the coordinator opens an utterance buffer on the rising edge,
-          continues buffering through speech (and the falling-edge chunk so
-          Silero's trailing pad is captured), and on the falling edge decides
-          whether the buffer is long enough to count as a real utterance
-          (``vad_min_utterance_ms``) or should be discarded (cough, click);
-        * to bound memory and latency on monologues the buffer is force-flushed
-          once it crosses ``vad_max_utterance_ms``, while keeping the speaker
-          marked as voiced so the next chunk seamlessly opens the next
-          utterance.
+        The VAD layer owns all audio buffering, hysteresis, and padding.
+        When a speech span ends (or ``max_utterance_ms`` is exceeded) it
+        returns a complete ``SpeechSegment`` ready for inference.  The
+        coordinator only gates by ``vad_min_utterance_ms`` and dispatches
+        to ASR / diarization / embedding.
         """
         if not self._current_session:
             raise RuntimeError("No active session")
@@ -589,67 +514,28 @@ class PipelineCoordinator:
             return
 
         audio = np.ascontiguousarray(audio, dtype=np.float32)
-        duration_ms = self._chunk_duration_ms(audio, sample_rate)
+        duration_ms = self._chunk_duration(audio, sample_rate)
         started_ms = self._session_elapsed_ms
         ended_ms = started_ms + duration_ms
         self._session_elapsed_ms = ended_ms
 
-        # VAD is lightweight (~1-5 ms) — keep it synchronous to avoid
-        # yielding the event loop before the buffer state is updated.
-        vad_segment = self.vad.process(audio, sample_rate)
-        if vad_segment is None:
+        result = self.vad.process(audio, sample_rate)
+        if result is None:
             return
 
-        was_in_speech = self._in_speech
-        is_speech_now = vad_segment.is_speech
-
-        if self.has_listeners("debug:vad"):
-            self._emit(
-                "debug:vad",
-                {"ms": started_ms, "is_speech": is_speech_now},
+        # VAD returned a complete utterance.
+        if result.duration_ms < self.config.vad_min_utterance_ms:
+            log.debug(
+                "discarding sub-min utterance: %d ms < %d ms",
+                result.duration_ms,
+                self.config.vad_min_utterance_ms,
             )
-
-        # Rising edge: inject preroll audio so Whisper has co-articulation
-        # context for the first phoneme of the utterance.
-        if not was_in_speech and is_speech_now:
-            preroll = getattr(vad_segment, "preroll_audio", None)
-            if preroll is not None and preroll.size > 0:
-                preroll_ms = self._chunk_duration_ms(preroll, sample_rate)
-                self._buffer_chunk(
-                    preroll, max(0, started_ms - preroll_ms), started_ms, sample_rate
-                )
-
-        # Buffer audio that is part of a speech span, including the
-        # falling-edge chunk so Silero's trailing speech-pad is preserved.
-        if was_in_speech or is_speech_now:
-            self._buffer_chunk(audio, started_ms, ended_ms, sample_rate)
-            if is_speech_now:
-                self._buffered_speech_ms += duration_ms
-
-        # Falling edge: VAD declared end-of-speech. Either emit or discard.
-        if was_in_speech and not is_speech_now:
-            if self._buffered_speech_ms >= self.config.vad_min_utterance_ms:
-                await self._flush_buffered_utterance()
-            else:
-                log.debug(
-                    "discarding sub-min utterance: %d ms < %d ms",
-                    self._buffered_speech_ms,
-                    self.config.vad_min_utterance_ms,
-                )
-                self._reset_buffer()
-            self._in_speech = False
             return
 
-        self._in_speech = is_speech_now
+        await self._flush_speech_segment(result)
 
-        # Force-flush long monologues to bound memory and ASR latency.
-        if (
-            self._in_speech
-            and self._buffered_speech_ms >= self.config.vad_max_utterance_ms
-        ):
-            log.info(
-                "force-flushing utterance at max length: %d ms",
-                self._buffered_speech_ms,
-            )
-            await self._flush_buffered_utterance()
-            # Stay voiced — the speaker is still talking.
+    @staticmethod
+    def _chunk_duration(audio: np.ndarray, sample_rate: int) -> int:
+        if sample_rate <= 0:
+            return 0
+        return max(1, int(round((len(audio) / sample_rate) * 1000)))

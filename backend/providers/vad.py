@@ -6,7 +6,7 @@ ASR / diarization / embedding providers.  The module-level factory
 loaded model and configuration).  Per-WebSocket-connection state is
 obtained via ``manager.create_session()``, which returns a lightweight
 ``VadSession`` carrying its own LSTM state, frame buffer, hysteresis
-counters, and preroll ring buffer.
+counters, preroll ring buffer, and speech audio buffer.
 """
 from __future__ import annotations
 
@@ -25,20 +25,34 @@ _FRAME_SAMPLES = 512
 
 @dataclass
 class VADSegment:
-    """Per-chunk VAD classification.
+    """Per-chunk VAD classification (debug / degraded-mode only).
 
     ``is_speech`` reflects the sustained speech/silence state at the end
-    of the chunk, after hysteresis and post-speech padding.  On a rising
-    edge (silence → speech) the segment may carry ``preroll_audio`` —
-    audio from the preceding silence window that should be prepended to
-    the utterance buffer so Whisper has enough context for the first
-    phoneme.
+    of the chunk.  Normal operation returns ``SpeechSegment`` instead —
+    this type is emitted only in degraded mode or for debug listeners.
     """
 
     start_ms: int
     end_ms: int
     is_speech: bool
     preroll_audio: np.ndarray | None = None
+
+
+@dataclass
+class SpeechSegment:
+    """A complete utterance ready for inference.
+
+    The VAD layer owns audio buffering end-to-end: when speech ends
+    (after hysteresis, post-padding, and internal force-flushing) the
+    concatenated padded audio is returned as a ``SpeechSegment``.
+    The coordinator gates by min/max duration and dispatches to ASR.
+    """
+
+    audio: np.ndarray
+    sample_rate: int
+    started_ms: int   # session-relative
+    ended_ms: int     # session-relative
+    duration_ms: int  # total speech time inside the segment
 
 
 class VADProvider:
@@ -146,9 +160,11 @@ class VadSession:
     """Per-connection VAD state — compatible with ``VADLike`` protocol.
 
     Each WebSocket connection gets its own session so the LSTM state,
-    frame buffer, hysteresis counters, and preroll ring buffer are
-    isolated per audio stream.
+    frame buffer, hysteresis counters, preroll ring buffer, and speech
+    audio buffer are isolated per audio stream.
     """
+
+    max_utterance_ms: int = 0  # set by coordinator after creation
 
     def reset(self) -> None:
         """Reset between recording sessions (clear LSTM and buffers)."""
@@ -156,20 +172,41 @@ class VadSession:
 
     def process(
         self, audio: np.ndarray, sample_rate: int
-    ) -> Optional[VADSegment]:
-        """Classify a chunk of streaming audio."""
+    ) -> Optional[SpeechSegment]:
+        """Classify a chunk of streaming audio.
+
+        Returns a complete ``SpeechSegment`` when an utterance boundary
+        is detected (or ``max_utterance_ms`` is exceeded).  Returns
+        ``None`` when audio is still accumulating or no speech detected.
+        """
+        raise NotImplementedError
+
+    def finalize(self) -> Optional[SpeechSegment]:
+        """Flush any remaining buffered speech (used at end-of-session).
+
+        Returns ``None`` when the remaining buffer is too short.
+        """
+        raise NotImplementedError
+
+    def snapshot(self) -> Optional[SpeechSegment]:
+        """Return a copy of the current buffered speech without clearing.
+
+        Used for draft ASR submissions while speech is still in progress.
+        Returns ``None`` when no speech is currently buffered.
+        """
         raise NotImplementedError
 
 
 class _SileroVadSession(VadSession):
-    """Per-connection Silero VAD session with hysteresis state machine."""
+    """Per-connection Silero VAD session owning the full audio buffer."""
 
     def __init__(self, provider: SileroVADProvider) -> None:
         self._p = provider
 
-        # Ensure model is loaded (lazy, called once per provider).
         if self._p._model is None:
             self._p.load()
+
+        self.max_utterance_ms: int = 0
 
         self._frame_buffer: np.ndarray = np.zeros(0, dtype=np.float32)
         self._is_voiced: bool = False
@@ -180,13 +217,20 @@ class _SileroVadSession(VadSession):
         self._silence_frames: int = 0
         self._post_pad_counter: int = 0
 
-        # Preroll ring buffer — holds the last pre_pad_ms of raw audio
+        # Preroll ring buffer
         self._preroll_samples = int(
             self._p.speech_pad_pre_ms / 1000 * self._p.sample_rate
         )
         self._recent_chunks: deque[np.ndarray] = deque()
         self._recent_total: int = 0
         self._max_recent = self._preroll_samples + _FRAME_SAMPLES * 4
+
+        # Speech audio buffer — accumulated per utterance
+        self._speech_chunks: list[np.ndarray] = []
+        self._speech_started_ms: int = 0
+        self._speech_duration_ms: int = 0
+        self._speech_ended_ms: int = 0
+        self._speech_sample_rate: int | None = None
 
     # -- VADLike protocol ---------------------------------------------------
 
@@ -199,10 +243,16 @@ class _SileroVadSession(VadSession):
         self._post_pad_counter = 0
         self._recent_chunks.clear()
         self._recent_total = 0
+        self._reset_speech_buffer()
 
     def process(
         self, audio: np.ndarray, sample_rate: int
-    ) -> Optional[VADSegment]:
+    ) -> Optional[SpeechSegment]:
+        """Feed a chunk through the hysteresis state machine.
+
+        Returns a ``SpeechSegment`` when speech ends or ``max_utterance_ms``
+        is exceeded, ``None`` otherwise.
+        """
         if sample_rate <= 0 or audio.size == 0:
             return None
         if sample_rate != self._p.sample_rate:
@@ -212,9 +262,9 @@ class _SileroVadSession(VadSession):
 
         audio = np.asarray(audio, dtype=np.float32).reshape(-1)
         duration_ms = max(1, int(round((len(audio) / sample_rate) * 1000)))
-        start_ms = self._elapsed_ms
-        end_ms = start_ms + duration_ms
-        self._elapsed_ms = end_ms
+        chunk_start_ms = self._elapsed_ms
+        chunk_end_ms = chunk_start_ms + duration_ms
+        self._elapsed_ms = chunk_end_ms
 
         # Feed the preroll ring buffer.
         self._recent_chunks.append(audio.copy())
@@ -223,11 +273,18 @@ class _SileroVadSession(VadSession):
             old = self._recent_chunks.popleft()
             self._recent_total -= len(old)
 
-        # Degraded mode — VAD errored earlier, treat everything as speech.
+        # Degraded mode — treat everything as speech, force-flush at max.
         if self._degraded:
-            return VADSegment(
-                start_ms=start_ms, end_ms=end_ms, is_speech=True
-            )
+            self._speech_chunks.append(audio.copy())
+            self._speech_duration_ms += duration_ms
+            if self._speech_started_ms == 0:
+                self._speech_started_ms = chunk_start_ms
+            self._speech_ended_ms = chunk_end_ms
+            if self._speech_sample_rate is None:
+                self._speech_sample_rate = sample_rate
+            if self.max_utterance_ms > 0 and self._speech_duration_ms >= self.max_utterance_ms:
+                return self._flush_speech()
+            return None
 
         # Accumulate into the fixed-frame buffer and drain.
         self._frame_buffer = (
@@ -236,13 +293,13 @@ class _SileroVadSession(VadSession):
             else np.concatenate([self._frame_buffer, audio])
         )
 
-        preroll: np.ndarray | None = None
         try:
             import torch
         except Exception:
             self._enter_degraded("torch not available")
-            return self._degraded_segment(start_ms, end_ms)
+            return self._step_degraded(audio, chunk_start_ms, chunk_end_ms, duration_ms, sample_rate)
 
+        segment: Optional[SpeechSegment] = None
         try:
             while self._frame_buffer.size >= _FRAME_SAMPLES:
                 frame = self._frame_buffer[:_FRAME_SAMPLES]
@@ -253,23 +310,103 @@ class _SileroVadSession(VadSession):
 
                 if transition == "start":
                     preroll = self._extract_preroll()
+                    self._speech_chunks.append(preroll)
+                    self._speech_sample_rate = sample_rate
                 elif transition == "end" and self._post_pad_counter == 0:
-                    # Post-pad starts now — keep is_voiced True for
-                    # post_pad_frames more frames.
                     self._post_pad_counter = self._p._post_pad_frames
         except Exception as exc:
             log.exception("Silero VAD inference failed; entering degraded mode")
             self._enter_degraded(str(exc))
-            return self._degraded_segment(start_ms, end_ms)
+            return self._step_degraded(audio, chunk_start_ms, chunk_end_ms, duration_ms, sample_rate)
 
-        return VADSegment(
-            start_ms=start_ms,
-            end_ms=end_ms,
-            is_speech=self._is_voiced,
-            preroll_audio=preroll,
+        # Buffer the current chunk if in a speech span.
+        if self._is_voiced:
+            self._speech_chunks.append(audio.copy())
+            self._speech_duration_ms += duration_ms
+            if self._speech_started_ms == 0:
+                self._speech_started_ms = chunk_start_ms
+            self._speech_ended_ms = chunk_end_ms
+            if self._speech_sample_rate is None:
+                self._speech_sample_rate = sample_rate
+
+        # Force-flush when max utterance duration is exceeded.
+        if (
+            self._is_voiced
+            and self.max_utterance_ms > 0
+            and self._speech_duration_ms >= self.max_utterance_ms
+        ):
+            segment = self._flush_speech()
+
+        return segment
+
+    def finalize(self) -> Optional[SpeechSegment]:
+        """Flush any remaining speech buffer at end-of-session."""
+        if self._speech_duration_ms <= 0 or not self._speech_chunks:
+            return None
+        return self._flush_speech()
+
+    def snapshot(self) -> Optional[SpeechSegment]:
+        """Return a copy of the current speech buffer without clearing."""
+        if self._speech_duration_ms <= 0 or not self._speech_chunks:
+            return None
+        audio = np.concatenate(self._speech_chunks)
+        return SpeechSegment(
+            audio=np.ascontiguousarray(audio, dtype=np.float32),
+            sample_rate=self._speech_sample_rate or self._p.sample_rate,
+            started_ms=self._speech_started_ms,
+            ended_ms=self._speech_ended_ms,
+            duration_ms=self._speech_duration_ms,
         )
 
     # -- internal -----------------------------------------------------------
+
+    def _reset_speech_buffer(self) -> None:
+        self._speech_chunks = []
+        self._speech_started_ms = 0
+        self._speech_duration_ms = 0
+        self._speech_ended_ms = 0
+        self._speech_sample_rate = None
+
+    def _flush_speech(self) -> SpeechSegment:
+        """Concatenate and return buffered speech, then reset."""
+        if not self._speech_chunks:
+            segment = SpeechSegment(
+                audio=np.zeros(0, dtype=np.float32),
+                sample_rate=self._p.sample_rate,
+                started_ms=0,
+                ended_ms=0,
+                duration_ms=0,
+            )
+        else:
+            audio = np.concatenate(self._speech_chunks)
+            segment = SpeechSegment(
+                audio=np.ascontiguousarray(audio, dtype=np.float32),
+                sample_rate=self._speech_sample_rate or self._p.sample_rate,
+                started_ms=self._speech_started_ms,
+                ended_ms=self._speech_ended_ms,
+                duration_ms=self._speech_duration_ms,
+            )
+        self._reset_speech_buffer()
+        return segment
+
+    def _step_degraded(
+        self,
+        audio: np.ndarray,
+        chunk_start_ms: int,
+        chunk_end_ms: int,
+        duration_ms: int,
+        sample_rate: int,
+    ) -> Optional[SpeechSegment]:
+        self._speech_chunks.append(audio.copy())
+        self._speech_duration_ms += duration_ms
+        if self._speech_started_ms == 0:
+            self._speech_started_ms = chunk_start_ms
+        self._speech_ended_ms = chunk_end_ms
+        if self._speech_sample_rate is None:
+            self._speech_sample_rate = sample_rate
+        if self.max_utterance_ms > 0 and self._speech_duration_ms >= self.max_utterance_ms:
+            return self._flush_speech()
+        return None
 
     def _get_probability(self, frame: np.ndarray) -> float:
         """Raw Silero speech probability for a single frame."""
@@ -286,7 +423,6 @@ class _SileroVadSession(VadSession):
         Returns ``"start"``, ``"end"``, or ``None``.
         """
         if not self._is_voiced:
-            # Silence → speech (rising edge)
             if prob >= self._p.threshold:
                 self._is_voiced = True
                 self._silence_frames = 0
@@ -294,36 +430,27 @@ class _SileroVadSession(VadSession):
                 return "start"
             return None
 
-        # Already in speech — check for falling edge or post-pad.
-
         if self._post_pad_counter > 0:
-            # We are in the post-speech padding window.
             self._post_pad_counter -= 1
             if self._post_pad_counter == 0:
-                # Post-pad exhausted → truly end speech.
                 self._is_voiced = False
                 self._silence_frames = 0
                 return "end"
-            # Still in post-pad — if probability recovers, cancel the end.
             if prob >= self._p.threshold:
                 self._post_pad_counter = 0
                 self._silence_frames = 0
-                return None  # speech resumes, no event
+                return None
             return None
 
-        # Normal speech — apply offset hysteresis.
         if prob >= self._p.negative_threshold:
             self._silence_frames = 0
-            return None  # still speaking
+            return None
 
         self._silence_frames += 1
         if self._silence_frames >= self._p._min_silence_frames:
-            # min_silence exhausted — begin post-pad (delayed end).
             if self._p._post_pad_frames > 0:
                 self._post_pad_counter = self._p._post_pad_frames - 1
-                # Stay voiced through post-pad window.
                 return None
-            # No post-pad configured — end immediately.
             self._is_voiced = False
             self._silence_frames = 0
             return "end"
@@ -331,19 +458,11 @@ class _SileroVadSession(VadSession):
         return None
 
     def _extract_preroll(self) -> np.ndarray:
-        """Extract up to ``preroll_samples`` of audio preceding speech onset.
-
-        Returns an empty array when no recent audio is available.
-        """
         if self._preroll_samples <= 0 or not self._recent_chunks:
             return np.zeros(0, dtype=np.float32)
 
-        # The most recent chunk may contain the onset frame itself;
-        # exclude it from the preroll by dropping the last chunk.
         chunks = list(self._recent_chunks)
         if len(chunks) >= 1:
-            # Remove the chunk that triggered the onset — it will be
-            # included by the coordinator's own buffering.
             chunks = chunks[:-1]
 
         if not chunks:
@@ -359,12 +478,9 @@ class _SileroVadSession(VadSession):
     def _enter_degraded(self, reason: str) -> None:
         self._degraded = True
         self._frame_buffer = np.zeros(0, dtype=np.float32)
-        self._is_voiced = True  # treat everything as speech
+        self._is_voiced = True
         self._silence_frames = 0
         log.warning("VAD entering degraded mode: %s", reason)
-
-    def _degraded_segment(self, start_ms: int, end_ms: int) -> VADSegment:
-        return VADSegment(start_ms=start_ms, end_ms=end_ms, is_speech=True)
 
 
 # -- factory ----------------------------------------------------------------
