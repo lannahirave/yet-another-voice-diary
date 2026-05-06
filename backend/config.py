@@ -105,10 +105,10 @@ class PipelineConfig:
     the unknown queue or the voice-profile gallery.
     """
 
-    vad_max_utterance_ms: int = 10_000
+    vad_max_utterance_ms: int = 13_000
     """Hard cap on continuous speech before forcing a flush.
 
-    Capped at 10 s (was 30 s) because PyAnnote diarization accuracy degrades
+    Capped at 13 s because PyAnnote diarization accuracy degrades
     on multi-speaker segments longer than ~15 s.  The speaker remains voiced
     after a forced flush; the next chunk continues buffering a fresh utterance.
     """
@@ -153,6 +153,25 @@ class PipelineConfig:
     Embedding still runs to build your voice profile for future
     system-audio matching.  When false, mic audio goes through full
     diarization same as system audio.
+    """
+
+    language_allowlist_enabled: bool = False
+    """When true, restrict transcription to allowed languages.
+
+    If the auto-detected language is not in the allowlist, or the
+    language confidence is below the threshold, the coordinator
+    re-transcribes with every allowed language and picks the best.
+    """
+
+    language_allowlist: str = "en,uk"
+    """Comma-separated ISO language codes for the allowlist (e.g. ``"en,uk"``)."""
+
+    language_confidence_threshold: float = 0.5
+    """Language detection confidence floor (0..1).
+
+    When the auto-detected language probability is below this value the
+    multi-pass re-transcription is triggered regardless of whether the
+    language is in the allowlist.
     """
 
 

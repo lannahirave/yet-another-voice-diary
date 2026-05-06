@@ -16,6 +16,8 @@ import {
 } from '../query/config'
 import type { ApiProviderStatus } from '../types/api'
 import { Toggle } from './shared/Toggle'
+import { MultiSelect } from './shared/MultiSelect'
+import type { MultiSelectOption } from './shared/MultiSelect'
 
 type ModelState =
   | 'LOADED'
@@ -73,28 +75,28 @@ const ASR_MODELS: ModelDef[] = [
     id: 'elevenlabs-scribe',
     name: 'ElevenLabs Scribe',
     size: 'cloud',
-    speed: 'settings.speedRealtime',
+    speed: '',
     quality: 'settings.qualityRecommended',
   },
   {
     id: 'tiny',
     name: 'whisper tiny',
     size: '~39 MB',
-    speed: '~32× realtime',
-    quality: 'settings.qualityAcceptable',
+    speed: '',
+    quality: '',
   },
   {
     id: 'medium',
     name: 'whisper medium',
     size: '~1.5 GB',
-    speed: '~8× realtime',
+    speed: '',
     quality: 'settings.qualityGood',
   },
   {
     id: 'large-v3-turbo',
     name: 'whisper large-v3-turbo',
     size: '~1.6 GB',
-    speed: '~8× realtime',
+    speed: '',
     quality: 'settings.qualityRecommended',
   },
 ]
@@ -104,14 +106,14 @@ const EMBED_MODELS: ModelDef[] = [
     id: 'ecapa',
     name: 'ECAPA-TDNN',
     size: '~85 MB',
-    speed: 'settings.speedFast',
+    speed: '',
     quality: 'settings.qualityRecommendedM',
   },
   {
     id: 'wavlm',
     name: 'WavLM Large',
     size: '~1.3 GB',
-    speed: '—',
+    speed: '',
     quality: 'settings.qualityAccurate',
   },
 ]
@@ -121,16 +123,43 @@ const DIAR_MODELS: ModelDef[] = [
     id: 'pyannote',
     name: 'PyAnnote 3.1',
     size: '~270 MB',
-    speed: 'settings.speedRealtime',
+    speed: '',
     quality: 'settings.qualityRecommended',
   },
   {
     id: 'sortformer-v2.1',
     name: 'NVIDIA Streaming Sortformer 4spk v2.1',
     size: '—',
-    speed: 'settings.speedRealtime',
+    speed: '',
     quality: 'settings.qualityAlternative',
   },
+]
+
+const LANGUAGE_OPTIONS: MultiSelectOption[] = [
+  { value: 'en', label: 'English (en)' },
+  { value: 'uk', label: 'Ukrainian (uk)' },
+  { value: 'de', label: 'German (de)' },
+  { value: 'fr', label: 'French (fr)' },
+  { value: 'es', label: 'Spanish (es)' },
+  { value: 'it', label: 'Italian (it)' },
+  { value: 'pl', label: 'Polish (pl)' },
+  { value: 'cs', label: 'Czech (cs)' },
+  { value: 'sk', label: 'Slovak (sk)' },
+  { value: 'ro', label: 'Romanian (ro)' },
+  { value: 'hu', label: 'Hungarian (hu)' },
+  { value: 'tr', label: 'Turkish (tr)' },
+  { value: 'ar', label: 'Arabic (ar)' },
+  { value: 'he', label: 'Hebrew (he)' },
+  { value: 'zh', label: 'Chinese (zh)' },
+  { value: 'ja', label: 'Japanese (ja)' },
+  { value: 'ko', label: 'Korean (ko)' },
+  { value: 'hi', label: 'Hindi (hi)' },
+  { value: 'pt', label: 'Portuguese (pt)' },
+  { value: 'nl', label: 'Dutch (nl)' },
+  { value: 'sv', label: 'Swedish (sv)' },
+  { value: 'da', label: 'Danish (da)' },
+  { value: 'no', label: 'Norwegian (no)' },
+  { value: 'fi', label: 'Finnish (fi)' },
 ]
 
 const sectionsBase: Array<{ id: SectionId; labelKey: string }> = [
@@ -170,7 +199,6 @@ function ModelCard({
   const buttonDisabled = disabled || selected
   const baseLabel = t(STATE_LABEL_KEYS[state])
   const stateLabel = baseLabel
-  const speedLabel = t(model.speed, { defaultValue: model.speed })
   const qualityLabel = t(model.quality, { defaultValue: model.quality })
 
   const handleSelect = () => {
@@ -198,8 +226,6 @@ function ModelCard({
         </span>
         <span style={{ color: 'var(--border-str)' }}>·</span>
         <span>{model.size}</span>
-        <span style={{ color: 'var(--border-str)' }}>·</span>
-        <span>{speedLabel}</span>
         <span style={{ color: 'var(--border-str)' }}>·</span>
         <span style={{ color: 'var(--text-muted)' }}>{qualityLabel}</span>
       </div>
@@ -369,7 +395,7 @@ export function Settings() {
   const [vadPadPre, setVadPadPre] = useState(300)
   const [vadPadPost, setVadPadPost] = useState(400)
   const [vadMinUtt, setVadMinUtt] = useState(300)
-  const [vadMaxUtt, setVadMaxUtt] = useState(10_000)
+  const [vadMaxUtt, setVadMaxUtt] = useState(13_000)
   const [savingPipeline, setSavingPipeline] = useState(false)
 
   // ASR quality gate local state
@@ -379,6 +405,9 @@ export function Settings() {
   const [asrNgram, setAsrNgram] = useState(3)
   const [draftEnabled, setDraftEnabled] = useState(false)
   const [micIsSelf, setMicIsSelf] = useState(true)
+  const [langAllowlistEnabled, setLangAllowlistEnabled] = useState(false)
+  const [langAllowlist, setLangAllowlist] = useState<string[]>(['en', 'uk'])
+  const [langConfidenceThreshold, setLangConfidenceThreshold] = useState(0.5)
 
   const configQuery = useConfigQuery()
   const storageQuery = useStorageInfoQuery()
@@ -412,6 +441,9 @@ export function Settings() {
       setAsrNgram(config.asr_no_repeat_ngram_size)
       setDraftEnabled(config.draft_enabled ?? false)
       setMicIsSelf(config.mic_is_self ?? true)
+      setLangAllowlistEnabled(config.language_allowlist_enabled ?? false)
+      setLangAllowlist((config.language_allowlist ?? 'en,uk').split(',').map((s) => s.trim()).filter(Boolean))
+      setLangConfidenceThreshold(config.language_confidence_threshold ?? 0.5)
       setActionError(null)
     }
   }, [config])
@@ -539,7 +571,7 @@ export function Settings() {
     }
   }
 
-  const commitPipeline = async (fields: Record<string, number | boolean>) => {
+  const commitPipeline = async (fields: Record<string, number | boolean | string>) => {
     if (!config || savingPipeline) return
     setSavingPipeline(true)
     setActionError(null)
@@ -1018,6 +1050,69 @@ export function Settings() {
                 }}
                 disabled={loadingConfig || !config || savingPipeline}
               />
+            </div>
+
+            <Divider />
+
+            <SectionTitle mt={20}>{t('settings.languageFiltering')}</SectionTitle>
+
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.langAllowlistEnabledLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.langAllowlistEnabledDesc')}</div>
+              </div>
+              <Toggle
+                dataTestId="lang-allowlist-toggle"
+                on={langAllowlistEnabled}
+                onChange={(next) => {
+                  setLangAllowlistEnabled(next)
+                  void commitPipeline({ language_allowlist_enabled: next })
+                }}
+                disabled={loadingConfig || !config || savingPipeline}
+              />
+            </div>
+
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.languageAllowlist')}</div>
+                <div style={stS.settingDesc}>{t('settings.langAllowlistDesc')}</div>
+              </div>
+              <div style={{ width: 260 }}>
+                <MultiSelect
+                  options={LANGUAGE_OPTIONS}
+                  selected={langAllowlist}
+                  onChange={(vals) => {
+                    setLangAllowlist(vals)
+                    void commitPipeline({ language_allowlist: vals.join(',') })
+                  }}
+                  placeholder={t('settings.langAllowlistPlaceholder')}
+                  disabled={!langAllowlistEnabled || savingPipeline}
+                  dataTestId="lang-allowlist"
+                />
+              </div>
+            </div>
+
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.langConfidenceThresholdLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.langConfidenceThresholdDesc')}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="range"
+                  min={1} max={100}
+                  value={Math.round(langConfidenceThreshold * 100)}
+                  disabled={!langAllowlistEnabled || savingPipeline}
+                  onChange={(e) => setLangConfidenceThreshold(Number(e.target.value) / 100)}
+                  onPointerUp={() => commitPipeline({ language_confidence_threshold: langConfidenceThreshold })}
+                  style={{ width: 120, accentColor: 'var(--accent)' }}
+                />
+                <span style={stS.paramValue}>{langConfidenceThreshold.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div style={stS.inlineHint}>
+              {savingPipeline ? t('settings.saving') : t('settings.langAllowlistHint')}
             </div>
 
             <div style={stS.inlineHint}>

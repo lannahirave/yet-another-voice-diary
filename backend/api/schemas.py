@@ -193,6 +193,9 @@ class ConfigOut(BaseModel):
     draft_enabled: bool = False
     draft_interval_ms: int = 5000
     mic_is_self: bool = True
+    language_allowlist_enabled: bool = False
+    language_allowlist: str = "en,uk"
+    language_confidence_threshold: float = 0.5
 
 
 class ThresholdUpdate(BaseModel):
@@ -219,6 +222,9 @@ class PipelineUpdate(BaseModel):
     draft_enabled: Optional[bool] = None
     draft_interval_ms: Optional[int] = None
     mic_is_self: Optional[bool] = None
+    language_allowlist_enabled: Optional[bool] = None
+    language_allowlist: Optional[str] = None
+    language_confidence_threshold: Optional[float] = None
 
 
 class UnloadAfterStopUpdate(BaseModel):

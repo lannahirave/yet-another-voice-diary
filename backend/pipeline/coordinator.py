@@ -224,6 +224,27 @@ class PipelineCoordinator:
 
     # ---- inference (thread-safe, no callbacks) -------------------------
 
+    def _apply_language_policy(self, audio: np.ndarray, utterance: Utterance) -> Utterance:
+        """Apply language allowlist policy. May re-transcribe with forced languages."""
+        if not self.config.language_allowlist_enabled:
+            return utterance
+        allowed = [x.strip() for x in self.config.language_allowlist.split(",") if x.strip()]
+        if not allowed:
+            return utterance
+        threshold = self.config.language_confidence_threshold
+
+        if (utterance.confidence < threshold or
+                (utterance.language and utterance.language not in allowed)):
+            candidates = [utterance]
+            for lang in allowed:
+                try:
+                    cand = self.asr.transcribe(audio, lang)
+                    candidates.append(cand)
+                except Exception:
+                    log.exception("language retry failed for lang=%s", lang)
+            utterance = max(candidates, key=lambda u: u.confidence)
+        return utterance
+
     def _infer_utterance(
         self,
         audio: np.ndarray,
@@ -306,6 +327,7 @@ class PipelineCoordinator:
             float(asr_ms),
             cuda_after,
         )
+        utterance = self._apply_language_policy(audio, utterance)
         if not utterance.transcript.strip():
             return (utterance, [], None), errors
 

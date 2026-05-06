@@ -86,6 +86,9 @@ def get_config_rt(request: Request):
         draft_enabled=cfg.pipeline.draft_enabled,
         draft_interval_ms=cfg.pipeline.draft_interval_ms,
         mic_is_self=cfg.pipeline.mic_is_self,
+        language_allowlist_enabled=cfg.pipeline.language_allowlist_enabled,
+        language_allowlist=cfg.pipeline.language_allowlist,
+        language_confidence_threshold=cfg.pipeline.language_confidence_threshold,
         providers=[
             _provider_status(kind, provider) for kind, provider in providers.items()
         ],

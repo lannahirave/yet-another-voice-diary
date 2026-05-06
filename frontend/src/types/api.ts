@@ -119,6 +119,9 @@ export interface ApiConfig {
   draft_enabled: boolean
   draft_interval_ms: number
   mic_is_self: boolean
+  language_allowlist_enabled: boolean
+  language_allowlist: string
+  language_confidence_threshold: number
 }
 
 export type ApiModelStatusMap = Record<string, ApiProviderStatus>
