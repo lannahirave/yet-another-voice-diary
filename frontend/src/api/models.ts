@@ -8,7 +8,7 @@ import { BASE_URL, apiFetch } from './client'
 export const getModelStatus = () => apiFetch<ApiModelStatusMap>('/models/status')
 
 export const loadModel = (type: string) =>
-  apiFetch<ApiProviderStatus>(`/models/${type}/load`, { method: 'POST' })
+  apiFetch<ApiProviderStatus>(`/models/${type}/load`, { method: 'POST' }, 120_000)
 
 export const unloadModel = (type: string) =>
   apiFetch<ApiProviderStatus>(`/models/${type}/unload`, { method: 'POST' })

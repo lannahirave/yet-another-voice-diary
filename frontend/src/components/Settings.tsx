@@ -64,7 +64,6 @@ interface ModelCardProps {
   lifecycleLabel?: string
   lifecycleDisabled?: boolean
   onLifecycle?: () => void
-  progress?: number
   errorMessage?: string | null
   kind?: string
 }
@@ -164,17 +163,13 @@ function ModelCard({
   lifecycleLabel,
   lifecycleDisabled,
   onLifecycle,
-  progress,
   errorMessage,
   kind,
 }: ModelCardProps) {
   const { t } = useTranslation()
   const buttonDisabled = disabled || selected
   const baseLabel = t(STATE_LABEL_KEYS[state])
-  const stateLabel =
-    state === 'LOADING' && typeof progress === 'number'
-      ? `${baseLabel} ${Math.round(progress * 100)}%`
-      : baseLabel
+  const stateLabel = baseLabel
   const speedLabel = t(model.speed, { defaultValue: model.speed })
   const qualityLabel = t(model.quality, { defaultValue: model.quality })
 
@@ -208,16 +203,6 @@ function ModelCard({
         <span style={{ color: 'var(--border-str)' }}>·</span>
         <span style={{ color: 'var(--text-muted)' }}>{qualityLabel}</span>
       </div>
-      {state === 'LOADING' && typeof progress === 'number' && (
-        <div style={stS.progressTrack}>
-          <div
-            style={{
-              ...stS.progressFill,
-              width: `${Math.max(2, Math.round(progress * 100))}%`,
-            }}
-          />
-        </div>
-      )}
       {state === 'ERROR' && errorMessage && (
         <div style={stS.modelError}>{errorMessage}</div>
       )}
@@ -371,17 +356,11 @@ export function Settings() {
   const [editingToken, setEditingToken] = useState(false)
   const [tokenDraft, setTokenDraft] = useState('')
   const [modelAction, setModelAction] = useState<ProviderKind | null>(null)
-  const diarProgress = useModelProgress('diarization')
-  const asrProgress = useModelProgress('asr')
-  const embProgress = useModelProgress('embedding')
-  const vadProgress = useModelProgress('vad')
-
-  const progressByKind: Record<string, number> = {
-    diarization: diarProgress?.progress ?? 0.0,
-    asr: asrProgress?.progress ?? 0.0,
-    embedding: embProgress?.progress ?? 0.0,
-    vad: vadProgress?.progress ?? 0.0,
-  }
+  const _diarProgress = useModelProgress('diarization')
+  const _asrProgress = useModelProgress('asr')
+  const _embProgress = useModelProgress('embedding')
+  const _vadProgress = useModelProgress('vad')
+  void _diarProgress; void _asrProgress; void _embProgress; void _vadProgress
 
   // VAD pipeline local state
   const [vadOnset, setVadOnset] = useState(0.60)
@@ -499,12 +478,7 @@ export function Settings() {
   const lifecycleLabel = (kind: ProviderKind, state: ModelState) => {
     if (modelAction === kind) return t('settings.btnUpdating')
     if (state === 'LOADED') return t('settings.btnUnload')
-    if (state === 'LOADING') {
-      const pct = progressByKind[kind]
-      return typeof pct === 'number'
-        ? `${t('settings.btnLoading')} ${Math.round(pct * 100)}%`
-        : t('settings.btnLoading')
-    }
+    if (state === 'LOADING') return t('settings.btnLoading')
     if (state === 'ERROR') return t('settings.btnRetry')
     return t('settings.btnLoad')
   }
@@ -608,7 +582,6 @@ export function Settings() {
     models.map((model) => {
       const cardState = providerCardState(provider, model.id)
       const isSelectedCard = selectedId === model.id
-      const showProgress = isSelectedCard && cardState === 'LOADING'
       return (
         <ModelCard
           key={model.id}
@@ -633,7 +606,6 @@ export function Settings() {
             cardState === 'LOADING'
           }
           onLifecycle={() => void handleModelLifecycle(kind)}
-          progress={showProgress ? progressByKind[kind] ?? 0.05 : undefined}
           errorMessage={isSelectedCard ? provider?.error ?? null : null}
         />
       )
@@ -1420,18 +1392,6 @@ const stS: Record<string, CSSProperties> = {
     fontFamily: 'var(--mono)',
     marginBottom: 8,
     flexWrap: 'wrap',
-  },
-  progressTrack: {
-    height: 4,
-    borderRadius: 2,
-    background: 'rgba(38,37,30,0.08)',
-    marginBottom: 8,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    background: 'var(--amber)',
-    transition: 'width 0.3s ease-out',
   },
   modelError: {
     fontSize: 11.5,

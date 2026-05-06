@@ -113,14 +113,12 @@ async def test_sortformer_load_surfaces_controlled_error_without_nemo(
         assert response.status_code == 200
 
         response = await client.post("/models/diarization/load")
-        assert response.status_code == 200
-        assert response.json()["state"] in {"LOADING", "ERROR"}
-
-        final = await _wait_for_state(client, "diarization", ("ERROR", "LOADED"), timeout=30.0)
-        if final["state"] == "ERROR":
-            assert ".[ml-nemo]" in (final["error"] or "")
+        # Synchronous load: returns 200 only when definitely loaded, 500 on error
+        if response.status_code == 200:
+            assert response.json()["state"] == "LOADED"
         else:
-            assert final["state"] == "LOADED"
+            assert response.status_code == 500
+            assert ".[ml-nemo]" in (response.json()["detail"] or "")
     finally:
         await client.post(
             "/config/provider/diarization", json={"model_id": original_model_id}

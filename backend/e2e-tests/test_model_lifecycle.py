@@ -72,9 +72,7 @@ async def test_initially_unloaded(client: AsyncClient, kind: str) -> None:
 async def test_load(client: AsyncClient, kind: str) -> None:
     r = await client.post(f"/models/{kind}/load")
     assert r.status_code == 200, f"load {kind} failed: {r.text}"
-    # Background load — accept LOADING or LOADED here; poll until LOADED below.
-    assert r.json()["state"] in {"LOADING", "LOADED"}, r.json()
-    await _wait_for_state(client, kind, "LOADED")
+    assert r.json()["state"] == "LOADED", f"{kind} not LOADED after load: {r.json()}"
 
 
 @pytest.mark.parametrize("kind", _ALL_KINDS)
@@ -83,6 +81,40 @@ async def test_load_is_idempotent(client: AsyncClient, kind: str) -> None:
     r = await client.post(f"/models/{kind}/load")
     assert r.status_code == 200
     assert r.json()["state"] == "LOADED"
+
+
+# ---------------------------------------------------------------------------
+# Synchronous load contract — POST /load blocks until loaded (or error)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("kind", _ALL_KINDS)
+async def test_synchronous_load_returns_loaded_not_loading(
+    client: AsyncClient, kind: str
+) -> None:
+    """POST /models/{kind}/load must not return until the model is definitely loaded."""
+    r = await client.post(f"/models/{kind}/load")
+    assert r.status_code == 200, f"load {kind} returned {r.status_code}: {r.text}"
+    body = r.json()
+    assert body["state"] == "LOADED", (
+        f"{kind} response state is {body['state']}, expected LOADED"
+    )
+    assert body["model_id"], f"{kind} model_id is empty: {body}"
+    assert body["error"] is None, f"{kind} has error: {body['error']}"
+
+
+@pytest.mark.parametrize("kind", _ALL_KINDS)
+async def test_synchronous_load_confirmed_in_status(
+    client: AsyncClient, kind: str
+) -> None:
+    """A GET /models/status immediately after a synchronous load must show LOADED."""
+    r = await client.get("/models/status")
+    assert r.status_code == 200
+    provider = r.json()[kind]
+    assert provider["state"] == "LOADED", (
+        f"{kind} status is {provider['state']}, expected LOADED"
+    )
+    assert provider["model_id"], f"{kind} model_id is empty in status: {provider}"
 
 
 # ---------------------------------------------------------------------------
@@ -158,9 +190,8 @@ async def test_unload_is_idempotent(client: AsyncClient, kind: str) -> None:
 @pytest.mark.parametrize("kind", _ALL_KINDS)
 async def test_reload_after_unload(client: AsyncClient, kind: str) -> None:
     r = await client.post(f"/models/{kind}/load")
-    assert r.status_code == 200
-    assert r.json()["state"] in {"LOADING", "LOADED"}
-    await _wait_for_state(client, kind, "LOADED")
+    assert r.status_code == 200, f"reload {kind} failed: {r.text}"
+    assert r.json()["state"] == "LOADED"
     cleanup = await client.post(f"/models/{kind}/unload")
     assert cleanup.json()["state"] == "UNLOADED"
 

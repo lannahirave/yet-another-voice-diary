@@ -139,8 +139,6 @@ def load_model(kind: str, request: Request):
 
     with load.lock:
         state = _provider_state(provider)
-        if state == "LOADING":
-            return _provider_status(kind, provider)
         if state == "LOADED":
             load.progress = 1.0
             log.info(
@@ -151,23 +149,33 @@ def load_model(kind: str, request: Request):
             )
             return _provider_status(kind, provider)
 
-        # mark LOADING immediately so concurrent calls observe it
-        try:
-            provider._state = "LOADING"  # type: ignore[attr-defined]
-            provider._error = None  # type: ignore[attr-defined]
-        except Exception:
-            pass
-        load.progress = 0.05
-        load.started_at = time.monotonic()
-        load.event.clear()
+        if state != "LOADING":
+            # Start a new background load thread
+            try:
+                provider._state = "LOADING"  # type: ignore[attr-defined]
+                provider._error = None  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            load.progress = 0.05
+            load.started_at = time.monotonic()
+            load.event.clear()
 
-        thread = threading.Thread(
-            target=_run_load,
-            args=(kind, provider, load),
-            name=f"load-{kind}",
-            daemon=True,
-        )
-        thread.start()
+            thread = threading.Thread(
+                target=_run_load,
+                args=(kind, provider, load),
+                name=f"load-{kind}",
+                daemon=True,
+            )
+            thread.start()
+
+    # Wait for the background thread to complete — 200 only when definitely loaded
+    if not load.event.wait(timeout=120.0):
+        raise HTTPException(status_code=504, detail=f"Model {kind} load timed out")
+
+    final_state = _provider_state(provider)
+    if final_state == "ERROR":
+        error_msg = getattr(provider, "_error", None) or "Model load failed"
+        raise HTTPException(status_code=500, detail=error_msg)
 
     return _provider_status(kind, provider)
 

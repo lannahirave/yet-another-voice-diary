@@ -17,9 +17,9 @@ function toApiError(path: string, err: unknown): Error {
   return err instanceof Error ? err : new Error(t('api.unknownError'))
 }
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+export async function apiFetch<T>(path: string, init?: RequestInit, timeoutMs?: number): Promise<T> {
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs ?? REQUEST_TIMEOUT_MS)
   const abortFromCaller = () => controller.abort()
   init?.signal?.addEventListener('abort', abortFromCaller, { once: true })
 

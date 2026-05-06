@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import {
   getConfig,
   getStorageInfo,
@@ -24,6 +24,7 @@ export function useConfigQuery() {
 
 /** Polls model status while any provider is loading — replaces SSE. */
 export function useModelProgress(kind: string) {
+  const queryClient = useQueryClient()
   const statusQuery = useQuery({
     queryKey: ['models', 'status'],
     queryFn: getModelStatus,
@@ -36,16 +37,26 @@ export function useModelProgress(kind: string) {
     },
   })
   const provider = statusQuery.data?.[kind]
+
+  // Keep config cache in sync with live model status so Settings cards reflect
+  // preload-on-start progress without re-fetching /config.
+  useEffect(() => {
+    if (!provider) return
+    queryClient.setQueryData<ApiConfig>(queryKeys.config.current(), (old) => {
+      if (!old) return old
+      return {
+        ...old,
+        providers: old.providers.map((p) =>
+          p.kind === kind ? { ...p, state: provider.state, error: provider.error } : p,
+        ),
+      }
+    })
+  }, [provider, queryClient, kind])
+
   return useMemo(() => {
     if (!provider || provider.state !== 'LOADING') return null
-    return { progress: _interpProgress(provider.state), state: provider.state, error: provider.error }
+    return { state: provider.state, error: provider.error }
   }, [provider])
-}
-
-function _interpProgress(state: string): number {
-  if (state === 'LOADED') return 1.0
-  if (state === 'LOADING') return 0.05
-  return 0.0
 }
 
 export function useSelectProviderMutation() {

@@ -184,10 +184,6 @@ Do this only after real ML validation is stable.
 - ✅ Frontend queue card consumes the cluster shape, shows the picked transcript and duration, and the existing-contact picker / new-contact / skip actions all operate on the full cluster. `UnknownQueue` refetches after resolve so cascaded auto-identifications are reflected.
 - ✅ Focused verification now covers coordinator buffering, diarization-aware speaker grouping, websocket stop-flush behavior, queue clustering + cascade resolve, and backend e2e model/audio flows.
 - ✅ **Simulated Settings sections removed** — backup toggle, ASR default lang, shortcut, open-in-finder, choose-location all removed from `Settings.tsx`. Interface language (UA/EN via i18next) is the only non-`/config` setting and is real.
-- 🟡 **Remaining Phase 5/6 gaps:**
-  - **ECAPA embedding model fails to load** — `WinError 123` malformed path (`pretrained_models\\D:\\MS_diploma\\web_app\\pretrained_models\\speechbrain_spkrec-ecapa-voxceleb`). Mixed relative-absolute path composition in the SpeechBrain cache layer. ASR and VAD work; diarization may work; identification is degraded or skipped. See `docs/voice-identification-environment.md`.
-  - Validate Silero/PyAnnote behavior with real `[ml]` environment and microphone audio (blocked by ECAPA until path is fixed)
-  - Improve true model download progress — current SSE uses synthetic interpolation over a 45 s ramp rather than tracking actual download bytes
 
 **Docs:**
 - `docs/voice_diary_architecture.md` — 6-layer design, SQLite schema, model recommendations
