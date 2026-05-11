@@ -161,8 +161,9 @@ def test_ws_start_then_audio_yields_utterance(sync_client):
         assert utt_msg["type"] == "utterance"
         assert utt_msg["data"]["session_id"] == "sess-1"
         assert utt_msg["data"]["started_ms"] == 0
-        # Trailing silence chunk is buffered to preserve Silero's speech pad.
-        assert utt_msg["data"]["ended_ms"] == 200
+        # Turn-level utterances now reflect diarized speech spans, not the full
+        # VAD flush window including the trailing silence boundary.
+        assert utt_msg["data"]["ended_ms"] == 100
         assert utt_msg["data"]["speaker_segment_id"] == seg_msg["data"]["id"]
         assert utt_msg["data"]["speaker_contact_id"] is None
 

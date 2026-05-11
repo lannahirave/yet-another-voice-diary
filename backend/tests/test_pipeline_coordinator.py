@@ -1,4 +1,4 @@
-﻿"""Pipeline coordinator tests — VAD-owned buffer model."""
+"""Pipeline coordinator tests for diarization-first multi-turn flushing."""
 from __future__ import annotations
 
 import asyncio
@@ -8,6 +8,7 @@ import numpy as np
 from backend.config import PipelineConfig
 from backend.models import RecordingSession, Utterance
 from backend.pipeline.coordinator import PipelineCoordinator
+from backend.providers.diarization import DiarizationSegment
 from backend.providers.vad import SpeechSegment
 
 
@@ -28,6 +29,25 @@ class FakeASRProvider:
         )
 
 
+class SequenceASRProvider:
+    def __init__(self, outputs: list[str]) -> None:
+        self.outputs = list(outputs)
+        self.calls: list[int] = []
+
+    def transcribe(
+        self,
+        audio: np.ndarray,
+        language_hint: str | None = None,
+    ) -> Utterance:
+        self.calls.append(int(len(audio)))
+        transcript = self.outputs.pop(0) if self.outputs else f"samples:{len(audio)}"
+        return Utterance(
+            transcript=transcript,
+            language=language_hint,
+            confidence=1.0 if transcript else 0.0,
+        )
+
+
 class EmptyASRProvider:
     def transcribe(
         self,
@@ -41,7 +61,7 @@ class FakeDiarizationProvider:
     def __init__(self) -> None:
         self.calls = 0
 
-    def segment(self, audio: np.ndarray) -> list[object]:
+    def segment(self, audio: np.ndarray) -> list[DiarizationSegment]:
         self.calls += 1
         return []
 
@@ -61,7 +81,7 @@ class RecordingEmbeddingProvider:
 
 
 class BrokenDiarizationProvider:
-    def segment(self, audio: np.ndarray) -> list[object]:
+    def segment(self, audio: np.ndarray) -> list[DiarizationSegment]:
         raise RuntimeError("diarization unavailable")
 
 
@@ -71,12 +91,19 @@ class BrokenEmbeddingProvider:
 
 
 class MultiSpeakerDiarizationProvider:
-    def segment(self, audio: np.ndarray) -> list:
-        from backend.providers.diarization import DiarizationSegment
+    def segment(self, audio: np.ndarray) -> list[DiarizationSegment]:
         return [
             DiarizationSegment(start=0.0, end=0.25, speaker="speaker_a"),
             DiarizationSegment(start=0.25, end=0.50, speaker="speaker_b"),
             DiarizationSegment(start=0.50, end=1.00, speaker="speaker_a"),
+        ]
+
+
+class OverlapDiarizationProvider:
+    def segment(self, audio: np.ndarray) -> list[DiarizationSegment]:
+        return [
+            DiarizationSegment(start=0.0, end=0.75, speaker="speaker_a"),
+            DiarizationSegment(start=0.25, end=0.50, speaker="speaker_b"),
         ]
 
 
@@ -145,13 +172,100 @@ class FakeVADProcessor:
         self._ended = 0
         return seg
 
+    def snapshot(self) -> SpeechSegment | None:
+        if not self._buffer:
+            return None
+        concat = np.concatenate(self._buffer)
+        return SpeechSegment(
+            audio=np.ascontiguousarray(concat, dtype=np.float32),
+            sample_rate=self._sr or 16000,
+            started_ms=self._started,
+            ended_ms=self._ended,
+            duration_ms=self._ended - self._started,
+        )
+
+
+class ScriptedVADProcessor:
+    """VAD whose ``process`` returns a SpeechSegment on False entries."""
+
+    def __init__(self, script: list[bool]) -> None:
+        self._script = list(script)
+        self._idx = 0
+        self._buffer: list[np.ndarray] = []
+        self._ended = 0
+        self._sr: int | None = None
+
+    def reset(self) -> None:
+        self._idx = 0
+        self._buffer = []
+        self._ended = 0
+        self._sr = None
+
+    def process(
+        self, audio: np.ndarray, sample_rate: int
+    ) -> SpeechSegment | None:
+        dur = max(1, int(round((len(audio) / sample_rate) * 1000)))
+        self._ended += dur
+        is_speech = self._script[self._idx] if self._idx < len(self._script) else False
+        self._idx += 1
+
+        if is_speech:
+            self._buffer.append(audio.copy())
+            if self._sr is None:
+                self._sr = sample_rate
+            return None
+
+        if not self._buffer:
+            return None
+
+        concat = np.concatenate(self._buffer)
+        seg = SpeechSegment(
+            audio=np.ascontiguousarray(concat, dtype=np.float32),
+            sample_rate=self._sr or sample_rate,
+            started_ms=0,
+            ended_ms=self._ended,
+            duration_ms=self._ended,
+        )
+        self._buffer = []
+        self._ended = 0
+        return seg
+
+    def finalize(self) -> SpeechSegment | None:
+        if not self._buffer:
+            return None
+        concat = np.concatenate(self._buffer)
+        seg = SpeechSegment(
+            audio=np.ascontiguousarray(concat, dtype=np.float32),
+            sample_rate=self._sr or 16000,
+            started_ms=0,
+            ended_ms=self._ended,
+            duration_ms=self._ended,
+        )
+        self._buffer = []
+        self._ended = 0
+        return seg
+
+    def snapshot(self) -> SpeechSegment | None:
+        if not self._buffer:
+            return None
+        concat = np.concatenate(self._buffer)
+        return SpeechSegment(
+            audio=np.ascontiguousarray(concat, dtype=np.float32),
+            sample_rate=self._sr or 16000,
+            started_ms=0,
+            ended_ms=self._ended,
+            duration_ms=self._ended,
+        )
+
+    max_utterance_ms: int = 0
+
 
 # Lower the min utterance floor so unit tests focus on the VAD/coordinator
 # boundary, not the floor itself.
 _TEST_PIPELINE_CFG = dict(vad_threshold=0.5, vad_min_utterance_ms=5)
 
 
-def test_process_chunk_buffers_until_silence_boundary():
+def test_process_chunk_buffers_until_silence_boundary() -> None:
     coordinator = PipelineCoordinator(
         PipelineConfig(**_TEST_PIPELINE_CFG),
         FakeASRProvider(),
@@ -162,8 +276,8 @@ def test_process_chunk_buffers_until_silence_boundary():
     session = RecordingSession(id="sess-1", language_hint="uk")
     coordinator.start_session(session)
 
-    utterances = []
-    segments = []
+    utterances: list[Utterance] = []
+    segments: list = []
     coordinator.on("utterance", utterances.append)
     coordinator.on("speaker_segment", segments.append)
 
@@ -182,20 +296,18 @@ def test_process_chunk_buffers_until_silence_boundary():
     assert len(segments) == 1
     assert utterances[0].session_id == session.id
     assert utterances[0].started_ms == 0
-    assert utterances[0].ended_ms == 300
+    assert utterances[0].ended_ms == 200
     assert utterances[0].speaker_segment_id == segments[0].id
     assert utterances[0].language == "uk"
-    # FakeASR transcribes "samples:<total_samples>"
-    # 2 × 100 ms speech @ 16 kHz = 3200 samples accumulated + trailing silence
-    # The VAD buffers speech chunks (1600×2=3200) and includes trailing audio.
     assert utterances[0].transcript == "samples:3200"
 
 
-def test_process_chunk_builds_one_segment_per_diarized_speaker():
+def test_process_chunk_emits_turn_rows_and_reuses_segment_for_same_speaker() -> None:
+    asr = FakeASRProvider()
     embedding = RecordingEmbeddingProvider()
     coordinator = PipelineCoordinator(
         PipelineConfig(**_TEST_PIPELINE_CFG),
-        FakeASRProvider(),
+        asr,
         MultiSpeakerDiarizationProvider(),
         embedding,
         vad_processor=FakeVADProcessor(),
@@ -204,8 +316,8 @@ def test_process_chunk_builds_one_segment_per_diarized_speaker():
     session = RecordingSession(id="sess-speakers", language_hint="uk")
     coordinator.start_session(session)
 
-    utterances = []
-    segments = []
+    utterances: list[Utterance] = []
+    segments: list = []
     coordinator.on("utterance", utterances.append)
     coordinator.on("speaker_segment", segments.append)
 
@@ -217,12 +329,45 @@ def test_process_chunk_builds_one_segment_per_diarized_speaker():
 
     assert len(segments) == 2
     assert embedding.calls == [75, 25]
-    assert len(utterances) == 1
-    assert utterances[0].speaker_segment_id == segments[0].id
+    assert [call[0] for call in asr.calls] == [25, 25, 50]
+    assert len(utterances) == 3
+    assert [u.started_ms for u in utterances] == [0, 250, 500]
+    assert [u.ended_ms for u in utterances] == [250, 500, 1000]
+    assert utterances[0].speaker_segment_id == utterances[2].speaker_segment_id
+    assert utterances[1].speaker_segment_id != utterances[0].speaker_segment_id
     assert utterances[0].session_id == session.id
 
 
-def test_fake_vad_detects_quiet_microphone_speech_in_pipeline_test():
+def test_overlap_normalization_prefers_dominant_speaker_without_duplicates() -> None:
+    asr = FakeASRProvider()
+    coordinator = PipelineCoordinator(
+        PipelineConfig(**_TEST_PIPELINE_CFG),
+        asr,
+        OverlapDiarizationProvider(),
+        FakeEmbeddingProvider(),
+        vad_processor=FakeVADProcessor(),
+        source="system",
+    )
+    coordinator.start_session(RecordingSession(id="sess-overlap"))
+
+    utterances: list[Utterance] = []
+    segments: list = []
+    coordinator.on("utterance", utterances.append)
+    coordinator.on("speaker_segment", segments.append)
+
+    speech = np.ones(100, dtype=np.float32)
+    silence = np.zeros(100, dtype=np.float32)
+    asyncio.run(coordinator.process_chunk(speech, 100))
+    asyncio.run(coordinator.process_chunk(silence, 100))
+
+    assert len(segments) == 1
+    assert len(utterances) == 1
+    assert asr.calls == [(75, None)]
+    assert utterances[0].started_ms == 0
+    assert utterances[0].ended_ms == 750
+
+
+def test_fake_vad_detects_quiet_microphone_speech_in_pipeline_test() -> None:
     coordinator = PipelineCoordinator(
         PipelineConfig(**_TEST_PIPELINE_CFG),
         FakeASRProvider(),
@@ -233,7 +378,7 @@ def test_fake_vad_detects_quiet_microphone_speech_in_pipeline_test():
     session = RecordingSession(id="sess-quiet")
     coordinator.start_session(session)
 
-    utterances = []
+    utterances: list[Utterance] = []
     coordinator.on("utterance", utterances.append)
 
     quiet_speech = np.full(1600, 0.03, dtype=np.float32)
@@ -246,7 +391,7 @@ def test_fake_vad_detects_quiet_microphone_speech_in_pipeline_test():
     assert utterances[0].session_id == session.id
 
 
-def test_end_session_flushes_buffered_speech():
+def test_end_session_flushes_buffered_speech() -> None:
     coordinator = PipelineCoordinator(
         PipelineConfig(**_TEST_PIPELINE_CFG),
         FakeASRProvider(),
@@ -257,7 +402,7 @@ def test_end_session_flushes_buffered_speech():
     session = RecordingSession(id="sess-2")
     coordinator.start_session(session)
 
-    utterances = []
+    utterances: list[Utterance] = []
     coordinator.on("utterance", utterances.append)
 
     speech = np.ones(1600, dtype=np.float32)
@@ -274,7 +419,7 @@ def test_end_session_flushes_buffered_speech():
     assert utterances[0].ended_ms == 100
 
 
-def test_end_session_drops_sub_min_buffered_speech():
+def test_end_session_drops_sub_min_buffered_speech() -> None:
     coordinator = PipelineCoordinator(
         PipelineConfig(vad_threshold=0.5, vad_min_utterance_ms=300),
         FakeASRProvider(),
@@ -288,7 +433,7 @@ def test_end_session_drops_sub_min_buffered_speech():
     utterances: list[Utterance] = []
     coordinator.on("utterance", utterances.append)
 
-    speech = np.ones(1600, dtype=np.float32)  # 100 ms @ 16 kHz
+    speech = np.ones(1600, dtype=np.float32)
     asyncio.run(coordinator.process_chunk(speech, 16000))
 
     ended_session = coordinator.end_session()
@@ -298,7 +443,7 @@ def test_end_session_drops_sub_min_buffered_speech():
     assert utterances == []
 
 
-def test_empty_asr_result_does_not_emit_blank_utterance_or_unknown_segment():
+def test_empty_asr_result_does_not_emit_blank_utterance_or_unknown_segment() -> None:
     diarization = FakeDiarizationProvider()
     coordinator = PipelineCoordinator(
         PipelineConfig(**_TEST_PIPELINE_CFG),
@@ -307,11 +452,10 @@ def test_empty_asr_result_does_not_emit_blank_utterance_or_unknown_segment():
         FakeEmbeddingProvider(),
         vad_processor=FakeVADProcessor(),
     )
-    session = RecordingSession(id="sess-empty-asr")
-    coordinator.start_session(session)
+    coordinator.start_session(RecordingSession(id="sess-empty-asr"))
 
-    utterances = []
-    segments = []
+    utterances: list[Utterance] = []
+    segments: list = []
     coordinator.on("utterance", utterances.append)
     coordinator.on("speaker_segment", segments.append)
 
@@ -322,10 +466,38 @@ def test_empty_asr_result_does_not_emit_blank_utterance_or_unknown_segment():
 
     assert utterances == []
     assert segments == []
-    assert diarization.calls == 0
+    assert diarization.calls == 1
 
 
-def test_pipeline_still_emits_utterance_when_speaker_enrichment_fails():
+def test_partial_empty_turn_only_drops_that_turn() -> None:
+    coordinator = PipelineCoordinator(
+        PipelineConfig(**_TEST_PIPELINE_CFG),
+        SequenceASRProvider(["", "hello", "world"]),
+        MultiSpeakerDiarizationProvider(),
+        FakeEmbeddingProvider(),
+        vad_processor=FakeVADProcessor(),
+        source="system",
+    )
+    coordinator.start_session(RecordingSession(id="sess-partial", language_hint="uk"))
+
+    utterances: list[Utterance] = []
+    segments: list = []
+    coordinator.on("utterance", utterances.append)
+    coordinator.on("speaker_segment", segments.append)
+
+    speech = np.ones(100, dtype=np.float32)
+    silence = np.zeros(100, dtype=np.float32)
+    asyncio.run(coordinator.process_chunk(speech, 100))
+    asyncio.run(coordinator.process_chunk(silence, 100))
+
+    assert len(utterances) == 2
+    assert [u.transcript for u in utterances] == ["hello", "world"]
+    assert [u.started_ms for u in utterances] == [250, 500]
+    assert len(segments) == 2
+    assert utterances[0].speaker_segment_id != utterances[1].speaker_segment_id
+
+
+def test_pipeline_still_emits_utterance_when_diarization_fails() -> None:
     coordinator = PipelineCoordinator(
         PipelineConfig(**_TEST_PIPELINE_CFG),
         FakeASRProvider(),
@@ -334,12 +506,11 @@ def test_pipeline_still_emits_utterance_when_speaker_enrichment_fails():
         vad_processor=FakeVADProcessor(),
         source="system",
     )
-    session = RecordingSession(id="sess-diarization-fallback")
-    coordinator.start_session(session)
+    coordinator.start_session(RecordingSession(id="sess-diarization-fallback"))
 
-    utterances = []
-    segments = []
-    errors = []
+    utterances: list[Utterance] = []
+    segments: list = []
+    errors: list[dict] = []
     coordinator.on("utterance", utterances.append)
     coordinator.on("speaker_segment", segments.append)
     coordinator.on("error", errors.append)
@@ -356,7 +527,7 @@ def test_pipeline_still_emits_utterance_when_speaker_enrichment_fails():
     assert len(errors) == 1
 
 
-def test_pipeline_still_emits_utterance_when_embedding_fails():
+def test_pipeline_still_emits_utterance_when_embedding_fails() -> None:
     coordinator = PipelineCoordinator(
         PipelineConfig(**_TEST_PIPELINE_CFG),
         FakeASRProvider(),
@@ -364,12 +535,11 @@ def test_pipeline_still_emits_utterance_when_embedding_fails():
         BrokenEmbeddingProvider(),
         vad_processor=FakeVADProcessor(),
     )
-    session = RecordingSession(id="sess-no-embedding")
-    coordinator.start_session(session)
+    coordinator.start_session(RecordingSession(id="sess-no-embedding"))
 
-    utterances = []
-    segments = []
-    errors = []
+    utterances: list[Utterance] = []
+    segments: list = []
+    errors: list[dict] = []
     coordinator.on("utterance", utterances.append)
     coordinator.on("speaker_segment", segments.append)
     coordinator.on("error", errors.append)
@@ -380,71 +550,14 @@ def test_pipeline_still_emits_utterance_when_embedding_fails():
     asyncio.run(coordinator.process_chunk(silence, 16000))
 
     assert len(utterances) == 1
-    assert utterances[0].session_id == session.id
+    assert utterances[0].session_id == "sess-no-embedding"
     assert utterances[0].speaker_segment_id is None
     assert utterances[0].speaker_contact_id is None
     assert segments == []
     assert len(errors) == 1
 
 
-class ScriptedVADProcessor:
-    """VAD whose ``process`` returns a SpeechSegment on False entries.
-
-    Each True chunk is buffered internally; each False chunk flushes
-    the accumulated speech as a SpeechSegment.  This decouples
-    coordinator endpointing tests from any real VAD state machine.
-    """
-
-    def __init__(self, script: list[bool]) -> None:
-        self._script = list(script)
-        self._idx = 0
-        self._buffer: list[np.ndarray] = []
-        self._ended = 0
-        self._sr: int | None = None
-
-    def reset(self) -> None:
-        self._idx = 0
-        self._buffer = []
-        self._ended = 0
-
-    def process(
-        self, audio: np.ndarray, sample_rate: int
-    ) -> SpeechSegment | None:
-        dur = max(1, int(round((len(audio) / sample_rate) * 1000)))
-        self._ended += dur
-        is_speech = (
-            self._script[self._idx]
-            if self._idx < len(self._script)
-            else False
-        )
-        self._idx += 1
-
-        if is_speech:
-            self._buffer.append(audio.copy())
-            if self._sr is None:
-                self._sr = sample_rate
-            return None
-
-        if not self._buffer:
-            return None
-
-        concat = np.concatenate(self._buffer)
-        duration = self._ended - 0
-        seg = SpeechSegment(
-            audio=np.ascontiguousarray(concat, dtype=np.float32),
-            sample_rate=self._sr or sample_rate,
-            started_ms=0,
-            ended_ms=self._ended,
-            duration_ms=duration,
-        )
-        self._buffer = []
-        self._ended = 0
-        return seg
-
-    max_utterance_ms: int = 0  # not used in scripted mode
-
-
-def test_sub_min_utterance_speech_is_discarded():
+def test_sub_min_utterance_speech_is_discarded() -> None:
     """A speech blip shorter than ``vad_min_utterance_ms`` must not emit ASR work."""
     asr = FakeASRProvider()
     diarization = FakeDiarizationProvider()
@@ -460,19 +573,16 @@ def test_sub_min_utterance_speech_is_discarded():
     utterances: list[Utterance] = []
     coordinator.on("utterance", utterances.append)
 
-    chunk = np.ones(1600, dtype=np.float32)  # 100 ms @ 16 kHz, below the 300 ms floor
+    chunk = np.ones(1600, dtype=np.float32)
     asyncio.run(coordinator.process_chunk(chunk, 16000))
     asyncio.run(coordinator.process_chunk(chunk, 16000))
 
     assert utterances == []
-    assert asr.calls == [], "sub-floor blips must not reach ASR"
-    assert diarization.calls == 0, "sub-floor blips must not reach diarization"
+    assert asr.calls == []
+    assert diarization.calls == 0
 
 
-def test_intra_utterance_silence_does_not_split_when_vad_stays_voiced():
-    """While VAD reports continuous speech, the coordinator only flushes when
-    the VAD returns a SpeechSegment.  The script [True,True,True,True,False]
-    buffers 4 chunks and flushes on the fifth (False)."""
+def test_intra_utterance_silence_does_not_split_when_vad_stays_voiced() -> None:
     coordinator = PipelineCoordinator(
         PipelineConfig(vad_threshold=0.5, vad_min_utterance_ms=5),
         FakeASRProvider(),
@@ -492,18 +602,10 @@ def test_intra_utterance_silence_does_not_split_when_vad_stays_voiced():
 
     assert len(utterances) == 1
     assert utterances[0].started_ms == 0
-    assert utterances[0].ended_ms == 500
+    assert utterances[0].ended_ms == 400
 
 
-def test_max_utterance_force_flushes_long_monologue():
-    """When VAD exceeds max_utterance_ms it returns a SpeechSegment mid-speech.
-
-    FakeVADProcessor doesn't implement force-flush; we use ScriptedVADProcessor
-    with explicit flush points at the right chunk boundaries.
-    The script [True,True,True,True,True,True,False] buffers 6 chunks,
-    then flushes on the False.  With max_utterance_ms=250 and 100ms chunks,
-    the real Silero VAD would force-flush after 3 chunks, but the scripted
-    version doesn't simulate that.  We test at least one final flush."""
+def test_max_utterance_force_flushes_long_monologue() -> None:
     coordinator = PipelineCoordinator(
         PipelineConfig(vad_threshold=0.5, vad_min_utterance_ms=5),
         FakeASRProvider(),
@@ -521,7 +623,6 @@ def test_max_utterance_force_flushes_long_monologue():
         asyncio.run(coordinator.process_chunk(chunk, 16000))
     asyncio.run(coordinator.process_chunk(np.zeros(1600, dtype=np.float32), 16000))
 
-    # Scripted VAD flushes once on False: one utterance with all 6 chunks
     assert len(utterances) >= 1
     total = utterances[-1].ended_ms - utterances[0].started_ms
-    assert total >= 600  # 6 voiced chunks accounted for
+    assert total >= 600

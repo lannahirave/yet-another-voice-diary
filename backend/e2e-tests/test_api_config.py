@@ -19,7 +19,7 @@ async def test_get_config_shape(client: AsyncClient) -> None:
     assert "chunk_duration_ms" in body
     assert "providers" in body
     kinds = {p["kind"] for p in body["providers"]}
-    assert kinds == {"asr", "embedding", "diarization"}
+    assert kinds == {"asr", "embedding", "diarization", "vad"}
 
 
 async def test_get_config_default_values(client: AsyncClient) -> None:
@@ -90,7 +90,7 @@ async def test_update_diarization_provider_to_sortformer(client: AsyncClient) ->
 
 
 async def test_update_unknown_provider_returns_404(client: AsyncClient) -> None:
-    r = await client.post("/config/provider/vad", json={"model_id": "something"})
+    r = await client.post("/config/provider/not-a-provider", json={"model_id": "something"})
     assert r.status_code == 404
 
 

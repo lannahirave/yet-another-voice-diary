@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import urlparse, unquote
 
 import numpy as np
 import pytest
@@ -59,6 +60,7 @@ class FakeVADProcessor:
     def reset(self) -> None:
         self._buffer = []
         self._ended = 0
+        self._sr = None
 
     def process(
         self, audio: np.ndarray, sample_rate: int
@@ -84,6 +86,34 @@ class FakeVADProcessor:
         self._buffer = []
         self._ended = 0
         return seg
+
+    def finalize(self) -> SpeechSegment | None:
+        if not self._buffer:
+            return None
+        concat = np.concatenate(self._buffer)
+        seg = SpeechSegment(
+            audio=np.ascontiguousarray(concat, dtype=np.float32),
+            sample_rate=self._sr or 16000,
+            started_ms=0,
+            ended_ms=self._ended,
+            duration_ms=self._ended,
+        )
+        self._buffer = []
+        self._ended = 0
+        self._sr = None
+        return seg
+
+    def snapshot(self) -> SpeechSegment | None:
+        if not self._buffer:
+            return None
+        concat = np.concatenate(self._buffer)
+        return SpeechSegment(
+            audio=np.ascontiguousarray(concat, dtype=np.float32),
+            sample_rate=self._sr or 16000,
+            started_ms=0,
+            ended_ms=self._ended,
+            duration_ms=self._ended,
+        )
 
 
 @pytest.fixture()
@@ -162,8 +192,10 @@ def test_super_debug_writes_compact_artifacts(
     if utt["speaker_segments"]:
         assert "embedding" not in utt["speaker_segments"][0]
 
-    wav_rel = utt["waveform_file"]
-    wav_path = session_dir / Path(wav_rel)
+    waveform_uri = utt["waveform_file"]
+    parsed = urlparse(waveform_uri)
+    assert parsed.scheme == "file"
+    wav_path = Path(unquote(parsed.path.lstrip("/")))
     assert wav_path.exists()
     assert wav_path.stat().st_size > 44
 
