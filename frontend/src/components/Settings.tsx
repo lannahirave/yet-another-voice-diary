@@ -18,6 +18,7 @@ import type { ApiProviderStatus } from '../types/api'
 import { Toggle } from './shared/Toggle'
 import { MultiSelect } from './shared/MultiSelect'
 import type { MultiSelectOption } from './shared/MultiSelect'
+import { ContactPicker } from './shared/ContactPicker'
 
 type ModelState =
   | 'LOADED'
@@ -404,7 +405,7 @@ export function Settings() {
   const [asrRepPenalty, setAsrRepPenalty] = useState(1.1)
   const [asrNgram, setAsrNgram] = useState(3)
   const [draftEnabled, setDraftEnabled] = useState(false)
-  const [micIsSelf, setMicIsSelf] = useState(true)
+  const [micSelfContactId, setMicSelfContactId] = useState<string | null>(null)
   const [langAllowlistEnabled, setLangAllowlistEnabled] = useState(false)
   const [langAllowlist, setLangAllowlist] = useState<string[]>(['en', 'uk'])
   const [langConfidenceThreshold, setLangConfidenceThreshold] = useState(0.5)
@@ -440,7 +441,7 @@ export function Settings() {
       setAsrRepPenalty(config.asr_repetition_penalty)
       setAsrNgram(config.asr_no_repeat_ngram_size)
       setDraftEnabled(config.draft_enabled ?? false)
-      setMicIsSelf(config.mic_is_self ?? true)
+      setMicSelfContactId(config.mic_self_contact_id ?? null)
       setLangAllowlistEnabled(config.language_allowlist_enabled ?? false)
       setLangAllowlist((config.language_allowlist ?? 'en,uk').split(',').map((s) => s.trim()).filter(Boolean))
       setLangConfidenceThreshold(config.language_confidence_threshold ?? 0.5)
@@ -571,7 +572,7 @@ export function Settings() {
     }
   }
 
-  const commitPipeline = async (fields: Record<string, number | boolean | string>) => {
+  const commitPipeline = async (fields: Record<string, number | boolean | string | null>) => {
     if (!config || savingPipeline) return
     setSavingPipeline(true)
     setActionError(null)
@@ -1022,18 +1023,21 @@ export function Settings() {
 
             <div style={stS.settingRow}>
               <div style={{ flex: 1 }}>
-                <div style={stS.settingName}>{t('settings.micIsSelfLabel')}</div>
-                <div style={stS.settingDesc}>{t('settings.micIsSelfDesc')}</div>
+                <div style={stS.settingName}>{t('settings.micSelfContactLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.micSelfContactDesc')}</div>
               </div>
-              <Toggle
-                dataTestId="mic-self-toggle"
-                on={micIsSelf}
-                onChange={(next) => {
-                  setMicIsSelf(next)
-                  void commitPipeline({ mic_is_self: next })
-                }}
-                disabled={loadingConfig || !config || savingPipeline}
-              />
+              <div style={{ width: 220 }}>
+                <ContactPicker
+                  selectedId={micSelfContactId}
+                  onChange={(id) => {
+                    setMicSelfContactId(id)
+                    void commitPipeline({ mic_self_contact_id: id })
+                  }}
+                  placeholder={t('settings.micSelfContactPlaceholder')}
+                  disabled={loadingConfig || !config || savingPipeline}
+                  dataTestId="mic-self-contact"
+                />
+              </div>
             </div>
 
             <div style={stS.settingRow}>

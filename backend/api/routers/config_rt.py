@@ -85,7 +85,7 @@ def get_config_rt(request: Request):
         asr_no_repeat_ngram_size=cfg.pipeline.asr_no_repeat_ngram_size,
         draft_enabled=cfg.pipeline.draft_enabled,
         draft_interval_ms=cfg.pipeline.draft_interval_ms,
-        mic_is_self=cfg.pipeline.mic_is_self,
+        mic_self_contact_id=cfg.pipeline.mic_self_contact_id,
         language_allowlist_enabled=cfg.pipeline.language_allowlist_enabled,
         language_allowlist=cfg.pipeline.language_allowlist,
         language_confidence_threshold=cfg.pipeline.language_confidence_threshold,

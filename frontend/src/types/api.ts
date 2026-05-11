@@ -118,7 +118,7 @@ export interface ApiConfig {
   asr_no_repeat_ngram_size: number
   draft_enabled: boolean
   draft_interval_ms: number
-  mic_is_self: boolean
+  mic_self_contact_id: string | null
   language_allowlist_enabled: boolean
   language_allowlist: string
   language_confidence_threshold: number

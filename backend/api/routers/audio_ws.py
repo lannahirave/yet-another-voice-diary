@@ -173,19 +173,20 @@ async def stream(ws: WebSocket) -> None:
 
     def on_seg(s: SpeakerSegment) -> None:
         s.diarization_model_id = ws.app.state.config.providers.diarization_model_id
-        try:
-            resolver.resolve(
-                s,
-                threshold=ws.app.state.config.pipeline.speaker_identification_threshold,
-            )
-        except Exception as exc:
-            log.exception("resolver failed; segment remains unknown")
-            queue.put_nowait({
-                "type": "error",
-                "code": "RESOLVER_FAILURE",
-                "component": "resolver",
-                "message": str(exc),
-            })
+        if not s.contact_id:
+            try:
+                resolver.resolve(
+                    s,
+                    threshold=ws.app.state.config.pipeline.speaker_identification_threshold,
+                )
+            except Exception as exc:
+                log.exception("resolver failed; segment remains unknown")
+                queue.put_nowait({
+                    "type": "error",
+                    "code": "RESOLVER_FAILURE",
+                    "component": "resolver",
+                    "message": str(exc),
+                })
         session_repo.create_speaker_segment(s)
         if not s.contact_id:
             queue_repo.enqueue(s.id)

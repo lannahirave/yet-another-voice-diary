@@ -192,7 +192,7 @@ class ConfigOut(BaseModel):
     asr_no_repeat_ngram_size: int = 3
     draft_enabled: bool = False
     draft_interval_ms: int = 5000
-    mic_is_self: bool = True
+    mic_self_contact_id: Optional[str] = None
     language_allowlist_enabled: bool = False
     language_allowlist: str = "en,uk"
     language_confidence_threshold: float = 0.5
@@ -221,7 +221,7 @@ class PipelineUpdate(BaseModel):
     asr_no_repeat_ngram_size: Optional[int] = None
     draft_enabled: Optional[bool] = None
     draft_interval_ms: Optional[int] = None
-    mic_is_self: Optional[bool] = None
+    mic_self_contact_id: Optional[str] = None
     language_allowlist_enabled: Optional[bool] = None
     language_allowlist: Optional[str] = None
     language_confidence_threshold: Optional[float] = None

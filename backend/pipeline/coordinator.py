@@ -332,8 +332,8 @@ class PipelineCoordinator:
             return (utterance, [], None), errors
 
         diarized_segments: list[DiarizationSegment] = []
-        if self.source == "mic" and self.config.mic_is_self:
-            # Mic attributed to "you" — skip diarization entirely.
+        if self.source == "mic" and self.config.mic_self_contact_id:
+            # Mic attributed directly to self-contact — skip diarization.
             pass
         else:
             _info(
@@ -424,6 +424,8 @@ class PipelineCoordinator:
                         session_id=session_id,
                         embedding=embedding,
                         source=self.source,
+                        contact_id=self.config.mic_self_contact_id if self.source == "mic" and self.config.mic_self_contact_id else None,
+                        status="identified" if self.source == "mic" and self.config.mic_self_contact_id else "unknown",
                     ),
                     sample_count,
                 )

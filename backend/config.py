@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import torch
 
@@ -147,12 +147,12 @@ class PipelineConfig:
     draft_interval_ms: int = 5000
     """Minimum interval between draft ASR submissions during active speech."""
 
-    mic_is_self: bool = True
-    """When true, mic audio skips diarization — always attributed to you.
+    mic_self_contact_id: Optional[str] = None
+    """When set, mic audio skips diarization and is directly attributed to this contact.
 
-    Embedding still runs to build your voice profile for future
-    system-audio matching.  When false, mic audio goes through full
-    diarization same as system audio.
+    Embedding still runs to build the voice profile for future system-audio
+    matching.  When None, mic audio goes through full diarization + resolver
+    same as system audio.
     """
 
     language_allowlist_enabled: bool = False
@@ -234,6 +234,7 @@ class BackendConfig:
         raw = json.loads(source.read_text(encoding="utf-8"))
         pipeline_raw = raw.get("pipeline", {})
         cls._migrate_vad_padding(pipeline_raw)
+        cls._migrate_mic_self_contact(pipeline_raw)
         config = cls(
             database=cls._load_database(raw.get("database", {})),
             pipeline=PipelineConfig(**pipeline_raw),
@@ -255,6 +256,15 @@ class BackendConfig:
             path=Path(raw_path) if raw_path is not None else None,
             echo=bool(raw.get("echo", False)),
         )
+
+    @staticmethod
+    def _migrate_mic_self_contact(pipeline_raw: dict[str, Any]) -> None:
+        """Drop legacy ``mic_is_self`` field — replaced by ``mic_self_contact_id``.
+
+        Old configs that had ``mic_is_self: true`` now default to ``None``
+        (diarization active).  The user must select a contact in Settings.
+        """
+        pipeline_raw.pop("mic_is_self", None)
 
     @staticmethod
     def _migrate_vad_padding(pipeline_raw: dict[str, Any]) -> None:

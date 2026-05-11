@@ -251,3 +251,14 @@ def identify_utterance(
         conn.commit()
 
     return UtteranceIdentifyResponse(updated_count=1, cascaded_count=cascaded)
+
+
+@router.delete("/utterances/{utterance_id}", status_code=204)
+def delete_utterance(
+    utterance_id: str,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    ok = SessionRepo(conn).delete_utterance(utterance_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="utterance not found")
+    return None

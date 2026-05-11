@@ -244,6 +244,35 @@ class SessionRepo:
         row = cur.fetchone()
         return dict(row) if row else None
 
+    def delete_utterance(self, utterance_id: str) -> bool:
+        utt = self.get_utterance(utterance_id)
+        if utt is None:
+            return False
+        segment_id = utt.get("speaker_segment_id")
+        # Delete the utterance (FTS5 trigger auto-cleans utterances_fts)
+        cur = self.conn.execute(
+            "DELETE FROM utterances WHERE id = ?", (utterance_id,)
+        )
+        if cur.rowcount == 0:
+            return False
+        # Cascade: if no other utterance references this speaker_segment, clean it up
+        if segment_id:
+            ref = self.conn.execute(
+                "SELECT COUNT(*) FROM utterances WHERE speaker_segment_id = ?",
+                (segment_id,),
+            ).fetchone()
+            if ref is not None and ref[0] == 0:
+                self.conn.execute(
+                    "DELETE FROM unknown_queue WHERE speaker_segment_id = ?",
+                    (segment_id,),
+                )
+                self.conn.execute(
+                    "DELETE FROM speaker_segments WHERE id = ?",
+                    (segment_id,),
+                )
+        self.conn.commit()
+        return True
+
     def list_unknown_segments(self, session_id: str) -> list[dict]:
         cur = self.conn.execute(
             "SELECT id, session_id, contact_id, status, embedding, "

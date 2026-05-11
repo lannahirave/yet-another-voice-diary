@@ -43,7 +43,7 @@ function mergeLiveUtterance(prev: Utterance[], next: Utterance): Utterance[] {
 import { Avatar } from './shared/Avatar'
 import { AudioLevelFooterLive } from './shared/AudioLevelFooter'
 import { getUtteranceCandidates } from '../api/sessions'
-import { useIdentifyUtteranceMutation } from '../query/sessions'
+import { useIdentifyUtteranceMutation, useDeleteUtteranceMutation } from '../query/sessions'
 import { useToast } from './Toast/useToast'
 
 type RecState = 'idle' | 'starting' | 'recording' | 'paused'
@@ -54,6 +54,8 @@ interface UtteranceRowProps {
   isDraft?: boolean
   onIdentify?: (utteranceId: string, contactId: string) => Promise<void>
   onPickerToggled?: (open: boolean) => void
+  onDelete?: (utteranceId: string) => void
+  deleting?: boolean
 }
 
 const UtteranceRow = memo(function UtteranceRow({
@@ -62,14 +64,15 @@ const UtteranceRow = memo(function UtteranceRow({
   isDraft = false,
   onIdentify,
   onPickerToggled,
+  onDelete,
+  deleting = false,
 }: UtteranceRowProps) {
   const { t } = useTranslation()
   const { contactById } = useContactsData()
   const contact = contactById(utt.speakerId)
   const sourceLabel = utt.source === 'system' ? 'SYS' : utt.source === 'mic' ? 'MIC' : null
-  const isMicSelf = utt.source === 'mic'
-  const isUnknown = !contact && !!utt.speakerSegmentId && !isLive && !isMicSelf
-  const displayName = contact ? contact.name : isMicSelf ? t('common.you') : t('common.unknown')
+  const isUnknown = !contact && !!utt.speakerSegmentId && !isLive
+  const displayName = contact ? contact.name : utt.source === 'mic' ? t('common.you') : t('common.unknown')
 
   const [pickerOpen, setPickerOpen] = useState(false)
   const [candidates, setCandidates] = useState<{ contactId: string; contactName: string; score: number }[]>([])
@@ -142,6 +145,20 @@ const UtteranceRow = memo(function UtteranceRow({
             </span>
           )}
           {utt.lang && <span style={csS.langTag}>{utt.lang}</span>}
+          {!isLive && !isDraft && onDelete && (
+            <button
+              data-testid={`delete-utt-${utt.id}`}
+              onClick={(e) => { e.stopPropagation(); onDelete(utt.id!) }}
+              disabled={deleting}
+              style={{
+                ...csS.deleteBtn,
+                opacity: deleting ? 0.15 : 0.3,
+                cursor: deleting ? 'default' : 'pointer',
+              }}
+            >
+              ✕
+            </button>
+          )}
         </div>
         <div style={{ ...csS.uttText, color: contact ? 'var(--text)' : isDraft ? 'var(--text-dim)' : 'var(--text-soft)', fontFamily: 'var(--utterance-font, var(--sans))', fontStyle: isDraft ? 'italic' : 'normal' }}>
           {isLive ? (
@@ -288,6 +305,24 @@ export function CurrentSession({
       await identifyMutation.mutateAsync({ utteranceId: uttId, contactId })
     },
     [identifyMutation],
+  )
+
+  const deleteMutation = useDeleteUtteranceMutation(sessionId)
+  const deletingRef = useRef<Set<string>>(new Set())
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set())
+  const onDeleteUtterance = useCallback(
+    async (uttId: string) => {
+      if (deletingRef.current.has(uttId)) return
+      deletingRef.current.add(uttId)
+      setDeletingIds(new Set(deletingRef.current))
+      try {
+        await deleteMutation.mutateAsync(uttId)
+      } finally {
+        deletingRef.current.delete(uttId)
+        setDeletingIds(new Set(deletingRef.current))
+      }
+    },
+    [deleteMutation],
   )
 
   // ---- virtualized utterance list ------------------------------------
@@ -700,6 +735,8 @@ export function CurrentSession({
                     utt={u}
                     onIdentify={onIdentify}
                     onPickerToggled={onPickerToggled}
+                    onDelete={onDeleteUtterance}
+                    deleting={deletingIds.has(u.id!)}
                   />
                 </div>
               )
@@ -847,6 +884,11 @@ const csS: Record<string, CSSProperties> = {
     fontSize: 10, color: 'var(--accent)', fontFamily: 'var(--mono)',
     fontWeight: 500, background: 'none', border: '1px solid rgba(245,78,0,0.3)',
     borderRadius: 4, padding: '1px 7px', cursor: 'pointer', letterSpacing: '0.04em',
+  },
+  deleteBtn: {
+    fontSize: 12, background: 'none', border: 'none',
+    color: 'var(--text-muted)', fontFamily: 'var(--mono)',
+    padding: '1px 5px', transition: 'opacity 0.15s',
   },
   identifyPanel: {
     marginTop: 4, marginBottom: 8, padding: '10px 12px',

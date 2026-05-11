@@ -39,3 +39,6 @@ export const identifyUtterance = (utteranceId: string, contactId: string) =>
     method: 'POST',
     body: JSON.stringify({ contact_id: contactId }),
   })
+
+export const deleteUtterance = (utteranceId: string) =>
+  apiFetch<void>(`/sessions/utterances/${utteranceId}`, { method: 'DELETE' })

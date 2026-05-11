@@ -1,8 +1,8 @@
-import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useContactsData } from '../query/contacts'
-import { useSessionUtterancesQuery, useSessionsListQuery } from '../query/sessions'
+import { useSessionUtterancesQuery, useSessionsListQuery, useDeleteUtteranceMutation } from '../query/sessions'
 import { updateSession } from '../api/sessions'
 import { queryKeys } from '../query/keys'
 import { useQueryClient } from '@tanstack/react-query'
@@ -41,6 +41,24 @@ export function AllSessions() {
     (utterance) =>
       !searchText ||
       utterance.text.toLowerCase().includes(searchText.toLowerCase()),
+  )
+
+  const deleteMutation = useDeleteUtteranceMutation(effectiveSelected)
+  const deletingRef = useRef<Set<string>>(new Set())
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set())
+  const handleDelete = useCallback(
+    async (uttId: string) => {
+      if (deletingRef.current.has(uttId)) return
+      deletingRef.current.add(uttId)
+      setDeletingIds(new Set(deletingRef.current))
+      try {
+        await deleteMutation.mutateAsync(uttId)
+      } finally {
+        deletingRef.current.delete(uttId)
+        setDeletingIds(new Set(deletingRef.current))
+      }
+    },
+    [deleteMutation],
   )
 
   useEffect(() => {
@@ -355,6 +373,18 @@ export function AllSessions() {
                           {utterance.time}
                         </span>
                         {utterance.lang && <span style={asS.langTag}>{utterance.lang}</span>}
+                        <button
+                          data-testid={`delete-utt-${utterance.id}`}
+                          onClick={(e) => { e.stopPropagation(); void handleDelete(utterance.id) }}
+                          disabled={deletingIds.has(utterance.id)}
+                          style={{
+                            ...asS.deleteBtn,
+                            opacity: deletingIds.has(utterance.id) ? 0.15 : 0.3,
+                            cursor: deletingIds.has(utterance.id) ? 'default' : 'pointer',
+                          }}
+                        >
+                          ✕
+                        </button>
                       </div>
                       <div
                         style={{
@@ -551,6 +581,15 @@ const asS: Record<string, CSSProperties> = {
     background: 'var(--surface2)',
     color: 'var(--accent)',
     borderRadius: 3,
+  },
+  deleteBtn: {
+    fontSize: 12,
+    background: 'none',
+    border: 'none',
+    color: 'var(--text-muted)',
+    fontFamily: 'var(--mono)',
+    padding: '1px 5px',
+    transition: 'opacity 0.15s',
   },
   skeletonLine: {
     height: 10,
