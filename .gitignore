@@ -32,3 +32,4 @@ backend/pretrained_models
 *.pid
 backend/voice_diary.db-wal
 backend/voice_diary.db-shm
+docs/denoiser.md

@@ -304,24 +304,9 @@ if "%SKIP_FRONTEND%"=="0" (
     echo   [OK] Frontend dependencies installed
 )
 
-REM ============================================================
-REM  5. Seed database
-REM ============================================================
-if "%SKIP_SEED%"=="0" (
-    echo.
-    echo [!STEP!/%TOTAL%] Seeding development database...
-    set /a STEP+=1
-
-    .venv-ml\Scripts\python.exe -X utf8 backend\scripts\seed_dev_db.py
-    if !errorlevel! neq 0 (
-        echo [WARN] Database seed returned an error ^(may already be seeded^)
-    ) else (
-        echo   [OK] Development database seeded
-    )
-)
 
 REM ============================================================
-REM  6. Verify installation
+REM  5. Verify installation
 REM ============================================================
 echo.
 echo [!STEP!/%TOTAL%] Verifying installation...

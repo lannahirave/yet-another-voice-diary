@@ -262,23 +262,9 @@ if [ "$SKIP_FRONTEND" -eq 0 ]; then
     echo "  [OK] Frontend dependencies installed"
 fi
 
-# ============================================================
-#  6. Seed database
-# ============================================================
-if [ "$SKIP_SEED" -eq 0 ]; then
-    echo
-    echo "[$STEP/$TOTAL] Seeding development database..."
-    STEP=$((STEP + 1))
-
-    if .venv-ml/bin/python -X utf8 backend/scripts/seed_dev_db.py 2>/dev/null || .venv-ml/bin/python backend/scripts/seed_dev_db.py; then
-        echo "  [OK] Development database seeded"
-    else
-        echo "  [WARN] Database seed returned an error (may already be seeded)"
-    fi
-fi
 
 # ============================================================
-#  7. Verify installation
+#  6. Verify installation
 # ============================================================
 echo
 echo "[$STEP/$TOTAL] Verifying installation..."

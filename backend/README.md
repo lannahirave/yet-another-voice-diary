@@ -39,7 +39,6 @@ python -m backend.run
 cd web_app/backend
 pip install -e ".[ml]"
 cd ..
-python -X utf8 backend/scripts/seed_dev_db.py
 python -m backend.run
 ```
 
@@ -261,7 +260,6 @@ python -m pytest backend/e2e-tests/ -v
 
 | Script | Purpose |
 |--------|---------|
-| `seed_dev_db.py` | Populate DB with 5 Ukrainian contacts + 3 sessions + 18 utterances |
 | `score_histogram.py` | Cosine-similarity distribution analysis (SAME vs DIFF, threshold suggestion) |
 | `clear_db.py` | Wipe all user data, preserve schema, VACUUM (with safety prompt) |
 

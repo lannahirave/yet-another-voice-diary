@@ -158,7 +158,6 @@ bash scripts/install.sh
 | `backend/api/routers/audio_ws.py` | PCM → ASR → utterance events |
 | `backend/providers/asr.py` | Whisper Large-v3-Turbo (CPU int8 / CUDA fp16) |
 | `backend/storage/session_repo.py` | Session + utterance CRUD |
-| `backend/scripts/seed_dev_db.py` | Populate DB with sample Ukrainian sessions |
 | `backend/scripts/score_histogram.py` | Diagnose identification — SAME vs DIFF cosine distributions, threshold suggestion |
 | `backend/scripts/clear_db.py` | Wipe user data, preserve schema (child-tables-first + FTS + VACUUM) |
 | `backend/scripts/verify_windows_install.py` | Post-install verification (Windows, CUDA, core imports, NeMo) |

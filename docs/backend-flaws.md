@@ -159,22 +159,6 @@ Contains only a constructor. Zero references anywhere in the codebase. The actua
 
 ---
 
-### 10. `seed_dev_db.py` uses brittle triple-`dirname` path manipulation
-
-**File:** `backend/scripts/seed_dev_db.py:16`
-
-**Status: CONFIRMED**
-
-```python
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-```
-
-Three chained `dirname()` calls climb from `backend/scripts/` to `web_app/` root. If the script moves, the chain breaks.
-
-**Fix:** Use `Path(__file__).resolve().parents[2]` for clarity, or rely on `pip install -e .` and import `backend.config` directly.
-
----
-
 ### 11. `get_candidates()` cross-model fallback returns scores without `model_id` context
 
 **File:** `backend/identification/resolver.py:105-109`
