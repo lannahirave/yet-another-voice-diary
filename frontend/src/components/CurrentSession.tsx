@@ -371,6 +371,7 @@ export function CurrentSession({
 
   useEffect(() => {
     if (showLive && transcriptRef.current) {
+      rowVirtualizer.measure()
       rowVirtualizer.scrollToIndex(utterances.length - 1, { align: 'end' })
     }
   }, [utterances, showLive, rowVirtualizer])
@@ -460,6 +461,18 @@ export function CurrentSession({
       title: 'System Audio Error',
       message: recordingErrorMessage(err, t),
     }))
+
+    sysWs.on('speaker_segment', (data) => {
+      const d = data as { id: string; contact_id: string | null; status: string }
+      if (d.contact_id && d.status === 'identified') {
+        setUtterances((prev) =>
+          prev.map((u) =>
+            u.speakerSegmentId === d.id ? { ...u, speakerId: d.contact_id } : u,
+          ),
+        )
+      }
+    })
+
     await sysWs.connect(sessionId)
 
     const ctx = new AudioContext({ sampleRate: 16000 })
@@ -536,6 +549,17 @@ export function CurrentSession({
         title: 'Pipeline Error',
         message: recordingErrorMessage(err, t),
       }))
+
+      ws.on('speaker_segment', (data) => {
+        const d = data as { id: string; contact_id: string | null; status: string }
+        if (d.contact_id && d.status === 'identified') {
+          setUtterances((prev) =>
+            prev.map((u) =>
+              u.speakerSegmentId === d.id ? { ...u, speakerId: d.contact_id } : u,
+            ),
+          )
+        }
+      })
 
       const streamPromise = navigator.mediaDevices?.getUserMedia({
         audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true },
