@@ -1,4 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '../query/keys'
 import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -268,6 +270,7 @@ export function CurrentSession({
   onIdentifyUnknown,
 }: CurrentSessionProps) {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const { contactById } = useContactsData()
   const [recState, setRecState] = useState<RecState>('idle')
   const [elapsed, setElapsed] = useState(0)
@@ -628,6 +631,7 @@ export function CurrentSession({
     setElapsed(0)
     setShowLive(false)
     onSessionIdChange?.(null)
+    queryClient.invalidateQueries({ queryKey: queryKeys.sessions.list() })
   }
 
   useEffect(() => () => {

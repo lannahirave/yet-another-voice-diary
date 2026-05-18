@@ -15,6 +15,7 @@ export function useSessionsListQuery() {
     queryKey: queryKeys.sessions.list(),
     queryFn: listSessions,
     select: (sessions) => sessions.map(adaptSession),
+    refetchOnMount: true,
   })
 }
 
