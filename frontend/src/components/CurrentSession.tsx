@@ -44,8 +44,7 @@ function mergeLiveUtterance(prev: Utterance[], next: Utterance): Utterance[] {
 
 import { Avatar } from './shared/Avatar'
 import { AudioLevelFooterLive } from './shared/AudioLevelFooter'
-import { getUtteranceCandidates } from '../api/sessions'
-import { useIdentifyUtteranceMutation, useDeleteUtteranceMutation } from '../query/sessions'
+import { useDeleteUtteranceMutation } from '../query/sessions'
 import { useToast } from './Toast/useToast'
 
 type RecState = 'idle' | 'starting' | 'recording' | 'paused'
@@ -54,8 +53,6 @@ interface UtteranceRowProps {
   utt: Utterance
   isLive?: boolean
   isDraft?: boolean
-  onIdentify?: (utteranceId: string, contactId: string) => Promise<void>
-  onPickerToggled?: (open: boolean) => void
   onDelete?: (utteranceId: string) => void
   deleting?: boolean
 }
@@ -64,8 +61,6 @@ const UtteranceRow = memo(function UtteranceRow({
   utt,
   isLive = false,
   isDraft = false,
-  onIdentify,
-  onPickerToggled,
   onDelete,
   deleting = false,
 }: UtteranceRowProps) {
@@ -73,46 +68,7 @@ const UtteranceRow = memo(function UtteranceRow({
   const { contactById } = useContactsData()
   const contact = contactById(utt.speakerId)
   const sourceLabel = utt.source === 'system' ? 'SYS' : utt.source === 'mic' ? 'MIC' : null
-  const isUnknown = !contact && !!utt.speakerSegmentId && !isLive
   const displayName = contact ? contact.name : utt.source === 'mic' ? t('common.you') : t('common.unknown')
-
-  const [pickerOpen, setPickerOpen] = useState(false)
-  const [candidates, setCandidates] = useState<{ contactId: string; contactName: string; score: number }[]>([])
-  const [hasEmbedding, setHasEmbedding] = useState(true)
-  const [loading, setLoading] = useState(false)
-
-  const openPicker = async () => {
-    if (!utt.id || utt.id === 'live') return
-    setPickerOpen(true)
-    onPickerToggled?.(true)
-    setLoading(true)
-    setCandidates([])
-    try {
-      const result = await getUtteranceCandidates(utt.id)
-      setCandidates(result.candidates.map((c) => ({
-        contactId: c.contact_id,
-        contactName: c.contact_name,
-        score: c.score,
-      })))
-      setHasEmbedding(result.has_embedding)
-    } catch {
-      setCandidates([])
-      setHasEmbedding(false)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const closePicker = useCallback(() => {
-    setPickerOpen(false)
-    onPickerToggled?.(false)
-  }, [onPickerToggled])
-
-  const handleIdentify = useCallback(async (contactId: string) => {
-    if (!utt.id || utt.id === 'live') return
-    closePicker()
-    await onIdentify?.(utt.id, contactId)
-  }, [utt.id, onIdentify, closePicker])
 
   return (
     <>
@@ -123,16 +79,6 @@ const UtteranceRow = memo(function UtteranceRow({
           <span style={{ ...csS.uttName, color: contact ? contact.color : 'var(--text-muted)', fontStyle: contact ? 'normal' : 'italic' }}>
             {displayName}
           </span>
-          {isUnknown && (
-            <button
-              data-testid="identify-btn"
-              onClick={(e) => { e.stopPropagation(); void openPicker() }}
-              style={csS.identifyBtn}
-              disabled={loading || pickerOpen}
-            >
-              {pickerOpen ? '…' : t('currentSession.identifyTitle')}
-            </button>
-          )}
           <span style={csS.uttTime}>{utt.time}</span>
           {sourceLabel && (
             <span
@@ -176,48 +122,6 @@ const UtteranceRow = memo(function UtteranceRow({
         </div>
       </div>
     </div>
-    {pickerOpen && (
-      <div data-testid="identify-panel" style={csS.identifyPanel}>
-        <div style={csS.identifyPanelTitle}>{t('currentSession.identifyTitle')}</div>
-        {loading ? (
-          <div style={csS.identifyPicker}>
-            {[0, 1].map((i) => (
-              <div key={i} style={csS.identifySkeleton} />
-            ))}
-          </div>
-        ) : (
-          <>
-            <div style={csS.identifyPicker}>
-              {candidates.map((c) => (
-                <button
-                  key={c.contactId}
-                  onClick={() => void handleIdentify(c.contactId)}
-                  style={csS.identifyCandidateBtn}
-                >
-                  <span style={{ fontWeight: 500 }}>{c.contactName}</span>
-                  <span style={{ color: 'var(--text-dim)', fontSize: 11, fontFamily: 'var(--mono)' }}>
-                    {Math.round(c.score * 100)}%
-                  </span>
-                </button>
-              ))}
-              {!hasEmbedding && (
-                <div style={{ fontSize: 11, color: 'var(--text-dim)', padding: '6px 0' }}>
-                  {t('currentSession.identifyNoEmbedding')}
-                </div>
-              )}
-              {candidates.length === 0 && hasEmbedding && (
-                <div style={{ fontSize: 12, color: 'var(--text-dim)', padding: '6px 0' }}>
-                  {t('currentSession.identifyNoCandidates')}
-                </div>
-              )}
-            </div>
-            <button onClick={closePicker} style={csS.identifyCancelBtn}>
-              ✕
-            </button>
-          </>
-        )}
-      </div>
-    )}
     </>
   )
 })
@@ -302,14 +206,6 @@ export function CurrentSession({
   })
   const systemSupported = isSystemAudioSupported()
 
-  const identifyMutation = useIdentifyUtteranceMutation(sessionId)
-  const onIdentify = useCallback(
-    async (uttId: string, contactId: string) => {
-      await identifyMutation.mutateAsync({ utteranceId: uttId, contactId })
-    },
-    [identifyMutation],
-  )
-
   const deleteMutation = useDeleteUtteranceMutation(sessionId)
   const deletingRef = useRef<Set<string>>(new Set())
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set())
@@ -336,13 +232,6 @@ export function CurrentSession({
     estimateSize: ESTIMATE_SIZE,
     overscan: 3,
   })
-
-  const onPickerToggled = useCallback(() => {
-    // Force virtualizer to re-measure after picker opens/closes
-    requestAnimationFrame(() => {
-      rowVirtualizer.measure()
-    })
-  }, [rowVirtualizer])
 
   // ---- memoized stats (avoids O(n) compute on audio-level re-renders) --
 
@@ -761,8 +650,6 @@ export function CurrentSession({
                 >
                   <UtteranceRow
                     utt={u}
-                    onIdentify={onIdentify}
-                    onPickerToggled={onPickerToggled}
                     onDelete={onDeleteUtterance}
                     deleting={deletingIds.has(u.id!)}
                   />
@@ -908,41 +795,9 @@ const csS: Record<string, CSSProperties> = {
   emptyTitle: { fontSize: 15, fontWeight: 600, color: 'var(--text-muted)' },
   emptySub: { fontSize: 13, color: 'var(--text-dim)' },
   bottombar: { minHeight: 64, borderTop: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', alignItems: 'center', padding: '10px 24px', flexShrink: 0 },
-  identifyBtn: {
-    fontSize: 10, color: 'var(--accent)', fontFamily: 'var(--mono)',
-    fontWeight: 500, background: 'none', border: '1px solid rgba(245,78,0,0.3)',
-    borderRadius: 4, padding: '1px 7px', cursor: 'pointer', letterSpacing: '0.04em',
-  },
   deleteBtn: {
     fontSize: 12, background: 'none', border: 'none',
     color: 'var(--text-muted)', fontFamily: 'var(--mono)',
     padding: '1px 5px', transition: 'opacity 0.15s',
-  },
-  identifyPanel: {
-    marginTop: 4, marginBottom: 8, padding: '10px 12px',
-    background: 'var(--surface)', border: '1px solid var(--border)',
-    borderRadius: 8, position: 'relative',
-  },
-  identifyPanelTitle: {
-    fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
-    fontFamily: 'var(--mono)', textTransform: 'uppercase',
-    letterSpacing: '0.08em', marginBottom: 8,
-  },
-  identifyPicker: { display: 'flex', flexWrap: 'wrap', gap: 6 },
-  identifyCandidateBtn: {
-    display: 'flex', alignItems: 'center', gap: 6,
-    background: 'var(--bg)', border: '1px solid var(--border)',
-    borderRadius: 6, padding: '5px 10px', cursor: 'pointer',
-    fontSize: 12, color: 'var(--text)', fontFamily: 'var(--sans)',
-  },
-  identifySkeleton: {
-    width: 100, height: 28, borderRadius: 6,
-    background: 'var(--surface2)', opacity: 0.6,
-    animation: 'pulse 1.2s ease-in-out infinite',
-  },
-  identifyCancelBtn: {
-    position: 'absolute', top: 6, right: 8,
-    background: 'none', border: 'none', color: 'var(--text-dim)',
-    fontSize: 12, cursor: 'pointer', padding: 2,
   },
 }
