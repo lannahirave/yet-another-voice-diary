@@ -137,7 +137,7 @@ if ! {
     "$UV_BIN" python install 3.12
 
     step "Creating private Python runtime"
-    "$UV_BIN" venv "$VENV_DIR" --python 3.12
+    "$UV_BIN" venv "$VENV_DIR" --python 3.12 --clear
 
     step "Installing Voice Diary backend dependencies"
     "$UV_BIN" pip install "${BACKEND_PROJECT}[ml]" --python "$PYTHON_EXE"

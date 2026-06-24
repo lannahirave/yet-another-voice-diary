@@ -150,7 +150,7 @@ try {
     }
 
     Invoke-Step "Creating private Python runtime" {
-        Invoke-Native $uv venv $venvDir --python 3.12
+        Invoke-Native $uv venv $venvDir --python 3.12 --clear
     }
 
     Invoke-Step "Installing Voice Diary backend dependencies" {
