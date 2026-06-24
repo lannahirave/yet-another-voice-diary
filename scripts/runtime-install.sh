@@ -92,6 +92,21 @@ resolve_cuda_torch_index() {
     fi
 }
 
+install_nemo() {
+    if [[ "${VOICE_DIARY_WITH_NEMO:-1}" = "0" ]]; then
+        step "Skipping NeMo Sortformer dependencies by VOICE_DIARY_WITH_NEMO=0"
+        return 0
+    fi
+
+    step "Installing NeMo Sortformer dependencies"
+    "$UV_BIN" pip install cython packaging --python "$PYTHON_EXE"
+    if [[ -n "${CUDA_INDEX:-}" ]]; then
+        "$UV_BIN" pip install "nemo_toolkit[asr,cu12] @ git+https://github.com/NVIDIA/NeMo.git@main" --python "$PYTHON_EXE"
+    else
+        "$UV_BIN" pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@main" --python "$PYTHON_EXE"
+    fi
+}
+
 step() {
     echo "[runtime-install] $1"
 }
@@ -133,14 +148,14 @@ if ! {
             --index-url "$CUDA_INDEX" --python "$PYTHON_EXE"
     fi
 
-    if [[ "${VOICE_DIARY_WITH_NEMO:-0}" = "1" ]]; then
-        step "Installing optional NeMo Sortformer dependencies"
-        "$UV_BIN" pip install cython packaging --python "$PYTHON_EXE"
-        "$UV_BIN" pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@main" --python "$PYTHON_EXE"
-    fi
+    install_nemo
 
     step "Verifying backend runtime imports"
-    "$PYTHON_EXE" -c "import torch; import faster_whisper; import pyannote.audio; import silero_vad; import speechbrain; from backend.providers.devices import normalize_indexed_cuda_device; assert normalize_indexed_cuda_device('cpu') == 'cpu'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+    if [[ "${VOICE_DIARY_WITH_NEMO:-1}" = "0" ]]; then
+        "$PYTHON_EXE" -c "import torch; import faster_whisper; import pyannote.audio; import silero_vad; import speechbrain; from backend.providers.devices import normalize_indexed_cuda_device; assert normalize_indexed_cuda_device('cpu') == 'cpu'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+    else
+        "$PYTHON_EXE" -c "import torch; import faster_whisper; import pyannote.audio; import silero_vad; import speechbrain; import nemo.collections.asr.models; from backend.providers.devices import normalize_indexed_cuda_device; assert normalize_indexed_cuda_device('cpu') == 'cpu'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+    fi
 }; then
     write_state "error" "unknown" "runtime bootstrap failed"
     exit 1

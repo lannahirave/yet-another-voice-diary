@@ -82,6 +82,28 @@ function Resolve-CudaTorchIndex {
     return ""
 }
 
+function Install-Nemo {
+    param(
+        [string]$Uv,
+        [string]$PythonExe,
+        [string]$CudaIndex
+    )
+
+    if ($env:VOICE_DIARY_WITH_NEMO -eq "0") {
+        Write-Host "[runtime-install] Skipping NeMo Sortformer dependencies by VOICE_DIARY_WITH_NEMO=0"
+        return
+    }
+
+    Invoke-Step "Installing NeMo Sortformer dependencies" {
+        & $Uv pip install cython packaging --python $PythonExe
+        if ($CudaIndex) {
+            & $Uv pip install "nemo_toolkit[asr,cu12] @ git+https://github.com/NVIDIA/NeMo.git@main" --python $PythonExe
+        } else {
+            & $Uv pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@main" --python $PythonExe
+        }
+    }
+}
+
 function Invoke-Step {
     param(
         [string]$Label,
@@ -130,15 +152,14 @@ try {
         }
     }
 
-    if ($env:VOICE_DIARY_WITH_NEMO -eq "1") {
-        Invoke-Step "Installing optional NeMo Sortformer dependencies" {
-            & $uv pip install cython packaging --python $pythonExe
-            & $uv pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@main" --python $pythonExe
-        }
-    }
+    Install-Nemo -Uv $uv -PythonExe $pythonExe -CudaIndex $cudaIndex
 
     Invoke-Step "Verifying backend runtime imports" {
-        & $pythonExe -c "import torch; import faster_whisper; import pyannote.audio; import silero_vad; import speechbrain; from backend.providers.devices import normalize_indexed_cuda_device; assert normalize_indexed_cuda_device('cpu') == 'cpu'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+        if ($env:VOICE_DIARY_WITH_NEMO -eq "0") {
+            & $pythonExe -c "import torch; import faster_whisper; import pyannote.audio; import silero_vad; import speechbrain; from backend.providers.devices import normalize_indexed_cuda_device; assert normalize_indexed_cuda_device('cpu') == 'cpu'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+        } else {
+            & $pythonExe -c "import torch; import faster_whisper; import pyannote.audio; import silero_vad; import speechbrain; import nemo.collections.asr.models; from backend.providers.devices import normalize_indexed_cuda_device; assert normalize_indexed_cuda_device('cpu') == 'cpu'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+        }
     }
 
     Write-State -Status "ok" -TorchVariant $torchVariant
