@@ -7,8 +7,20 @@ const BACKEND_PORT = 8765
 const HEALTH_URL = `http://127.0.0.1:${BACKEND_PORT}/health`
 const MAX_ATTEMPTS = 40
 const INTERVAL_MS = 500
+const RUNTIME_STATE_FILE = 'install-state.json'
 
 let pythonProc: ChildProcess | null = null
+
+type StartBackendOptions = {
+  appVersion: string
+  devWebAppDir: string
+  userDataDir: string
+}
+
+type RuntimeInstallState = {
+  appVersion?: string
+  status?: string
+}
 
 function resolvePythonCommand(webAppDir: string): string {
   const candidates = [
@@ -23,6 +35,33 @@ function resolvePythonCommand(webAppDir: string): string {
   }
 
   return 'python'
+}
+
+function resolveRuntimeRoot(userDataDir: string): string {
+  return path.join(userDataDir, 'backend-runtime')
+}
+
+function resolveRuntimePython(runtimeRoot: string): string {
+  return process.platform === 'win32'
+    ? path.join(runtimeRoot, 'venv', 'Scripts', 'python.exe')
+    : path.join(runtimeRoot, 'venv', 'bin', 'python')
+}
+
+function readRuntimeState(runtimeRoot: string): RuntimeInstallState | null {
+  const statePath = path.join(runtimeRoot, RUNTIME_STATE_FILE)
+  if (!fs.existsSync(statePath)) return null
+
+  try {
+    return JSON.parse(fs.readFileSync(statePath, 'utf8')) as RuntimeInstallState
+  } catch {
+    return null
+  }
+}
+
+function runtimeNeedsBootstrap(runtimeRoot: string, appVersion: string): boolean {
+  const pythonCommand = resolveRuntimePython(runtimeRoot)
+  const state = readRuntimeState(runtimeRoot)
+  return !fs.existsSync(pythonCommand) || state?.status !== 'ok' || state.appVersion !== appVersion
 }
 
 function healthCheck(): Promise<boolean> {
@@ -49,27 +88,91 @@ function waitUntilReady(maxAttempts: number): Promise<void> {
   })
 }
 
-export async function startPythonBackend(webAppDir: string): Promise<void> {
+function runProcess(command: string, args: string[], cwd: string, label: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(command, args, {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env },
+    })
+
+    proc.stdout?.on('data', (d: Buffer) => console.log(`[${label}]`, d.toString().trim()))
+    proc.stderr?.on('data', (d: Buffer) => console.error(`[${label}]`, d.toString().trim()))
+    proc.on('error', reject)
+    proc.on('exit', (code) => {
+      if (code === 0) {
+        resolve()
+      } else {
+        reject(new Error(`${label} exited with code ${code ?? 'unknown'}`))
+      }
+    })
+  })
+}
+
+async function bootstrapPackagedRuntime(resourcesDir: string, runtimeRoot: string, appVersion: string): Promise<void> {
+  const scriptsDir = path.join(resourcesDir, 'scripts')
+  const command = process.platform === 'win32' ? 'powershell.exe' : '/usr/bin/env'
+  const scriptPath = process.platform === 'win32'
+    ? path.join(scriptsDir, 'runtime-install.ps1')
+    : path.join(scriptsDir, 'runtime-install.sh')
+  const args = process.platform === 'win32'
+    ? [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        scriptPath,
+        '-SourceRoot',
+        resourcesDir,
+        '-RuntimeRoot',
+        runtimeRoot,
+        '-AppVersion',
+        appVersion,
+      ]
+    : [
+        'bash',
+        scriptPath,
+        '--source-root',
+        resourcesDir,
+        '--runtime-root',
+        runtimeRoot,
+        '--app-version',
+        appVersion,
+      ]
+
+  if (!fs.existsSync(scriptPath)) {
+    throw new Error(`Runtime bootstrap script not found: ${scriptPath}`)
+  }
+
+  await runProcess(command, args, resourcesDir, 'runtime-install')
+}
+
+export async function startPythonBackend(options: StartBackendOptions): Promise<void> {
   // Check if backend is already running (e.g., started externally)
   if (await healthCheck()) return
 
   const isDev = process.env.NODE_ENV === 'development'
+  const resourcesDir = process.resourcesPath
+  let pythonCommand: string
+  let backendCwd: string
 
   if (isDev) {
-    const pythonCommand = resolvePythonCommand(webAppDir)
-    pythonProc = spawn(pythonCommand, ['-m', 'backend.run'], {
-      cwd: webAppDir,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env },
-    })
+    backendCwd = options.devWebAppDir
+    pythonCommand = resolvePythonCommand(options.devWebAppDir)
   } else {
-    // In packaged mode, spawn bundled binary (post-Phase 7)
-    const backendExe = path.join(webAppDir, 'voice-diary-backend', 'backend.run')
-    pythonProc = spawn(backendExe, [], {
-      cwd: webAppDir,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
+    const runtimeRoot = resolveRuntimeRoot(options.userDataDir)
+    if (runtimeNeedsBootstrap(runtimeRoot, options.appVersion)) {
+      await bootstrapPackagedRuntime(resourcesDir, runtimeRoot, options.appVersion)
+    }
+    backendCwd = resourcesDir
+    pythonCommand = resolveRuntimePython(runtimeRoot)
   }
+
+  pythonProc = spawn(pythonCommand, ['-m', 'backend.run'], {
+    cwd: backendCwd,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env },
+  })
 
   pythonProc.stdout?.on('data', (d: Buffer) => console.log('[python]', d.toString().trim()))
   pythonProc.stderr?.on('data', (d: Buffer) => console.error('[python]', d.toString().trim()))

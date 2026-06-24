@@ -12,8 +12,10 @@ cd D:\web_app\frontend && npm run typecheck
 # Frontend unit tests
 cd D:\web_app\frontend && npm run test:unit
 
-# Backend tests (unit, run without ML models)
+# Backend tests (unit, run without ML models).
+# Prefer .venv when present; use .venv-ml if this workspace only has the ML env.
 D:\web_app\.venv\Scripts\python.exe -m pytest D:\web_app\backend\tests\ -v
+D:\web_app\.venv-ml\Scripts\python.exe -m pytest D:\web_app\backend\tests\ -v
 
 # Backend e2e tests (requires .venv-ml with [ml] extras + HF_TOKEN)
 D:\web_app\.venv-ml\Scripts\python.exe -m pytest D:\web_app\backend\e2e-tests\ -v
@@ -66,6 +68,16 @@ D:\web_app\
 - Frontend mutations: onSuccess → `queryClient.setQueryData()` + `invalidateQueries()`
 - Model lifecycle: background daemon threads + SSE progress streaming + per-kind `_LoadState` lock
 - Config persistence path: `~/.voice-diary/config.json`
+
+### Packaging / runtime
+- Electron packaging uses `electron-builder` from `frontend/package.json`.
+- Packaged apps bundle backend source and runtime bootstrap scripts as `extraResources`.
+- Packaged Electron must not depend on the repo checkout or root `.venv*` folders.
+- Packaged backend runtime is installed under Electron `app.getPath('userData')/backend-runtime`.
+- Runtime bootstrap scripts live in `scripts/runtime-install.ps1` and `scripts/runtime-install.sh`.
+- CUDA support is selected at runtime: detect NVIDIA via `nvidia-smi`, install compatible PyTorch CUDA wheels when supported, otherwise fall back to CPU. Do not bundle NVIDIA drivers.
+- macOS uses normal PyTorch wheels and relies on MPS when available; CUDA is Windows/Linux NVIDIA only.
+- If changing startup/runtime packaging, check `frontend/electron/python-manager.ts`, `frontend/electron/main.ts`, and `frontend/package.json` together.
 
 ## Key architectural rules
 

@@ -9,6 +9,12 @@
     "language": "Language",
     "you": "You"
   },
+  "startup": {
+    "startingTitle": "Starting Voice Diary",
+    "startingBody": "Preparing the local speech backend on port {{port}}. First launch can take several minutes while the private Python runtime is installed.",
+    "errorTitle": "Backend could not start",
+    "errorBody": "Voice Diary could not prepare the local speech backend. Close the app and start it again; if it repeats, inspect the error below."
+  },
   "sidebar": {
     "groupRecords": "RECORDS",
     "groupPeople": "PEOPLE",

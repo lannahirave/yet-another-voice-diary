@@ -53,12 +53,46 @@
       "dist/**/*",
       "dist-electron/**/*"
     ],
-    "extraResources": [],
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": [
+          "pyproject.toml",
+          "*.py",
+          "api/**/*",
+          "storage/**/*",
+          "providers/**/*",
+          "pipeline/**/*",
+          "identification/**/*",
+          "scripts/**/*",
+          "!**/__pycache__/**/*",
+          "!tests/**/*",
+          "!e2e-tests/**/*",
+          "!pretrained_models/**/*",
+          "!voice_diary.db*"
+        ]
+      },
+      {
+        "from": "../scripts",
+        "to": "scripts",
+        "filter": [
+          "runtime-install.ps1",
+          "runtime-install.sh"
+        ]
+      }
+    ],
     "win": {
       "target": "nsis"
     },
     "mac": {
       "target": "dmg"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ]
     }
   }
 }

@@ -8,16 +8,6 @@
  * renderer in current Electron/Chromium on Windows.
  */
 
-interface ElectronAPI {
-  platform?: string
-}
-
-declare global {
-  interface Window {
-    electronAPI?: ElectronAPI
-  }
-}
-
 export class SystemAudioUnavailableError extends Error {
   constructor(message: string) {
     super(message)

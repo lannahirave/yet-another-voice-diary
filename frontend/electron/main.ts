@@ -45,18 +45,24 @@ function configureDesktopLoopback(): void {
   })
 }
 
-async function createWindow(): Promise<void> {
+async function startBackend(): Promise<void> {
   console.log('[main] Starting Python backend...')
   backendStatus = { state: 'starting', port: BACKEND_PORT, error: null }
   try {
-    await startPythonBackend(WEB_APP_DIR)
+    await startPythonBackend({
+      appVersion: app.getVersion(),
+      devWebAppDir: WEB_APP_DIR,
+      userDataDir: app.getPath('userData'),
+    })
     backendStatus = { state: 'ready', port: BACKEND_PORT, error: null }
     console.log('[main] Backend ready')
   } catch (err) {
     backendStatus = { state: 'error', port: BACKEND_PORT, error: errorMessage(err) }
     console.error('[main] Backend failed to start:', err)
   }
+}
 
+async function createWindow(): Promise<void> {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -76,6 +82,8 @@ async function createWindow(): Promise<void> {
   } else {
     await win.loadFile(path.join(FRONTEND_DIR, 'dist', 'index.html'))
   }
+
+  void startBackend()
 }
 
 ipcMain.handle('get-backend-port', () => BACKEND_PORT)

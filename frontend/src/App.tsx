@@ -1,6 +1,8 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { useScreen } from './hooks/useScreen'
+import { useTranslation } from 'react-i18next'
+import type { BackendStartupStatus } from './types/electron'
 import type { ScreenId, Utterance } from './types/domain'
 
 const AllSessions = lazy(() => import('./components/AllSessions').then(m => ({ default: m.AllSessions })))
@@ -13,6 +15,105 @@ const UnknownQueue = lazy(() => import('./components/UnknownQueue').then(m => ({
 interface EditModeMessage {
   type: string
   edits?: { startScreen?: ScreenId }
+}
+
+const startupStyles: Record<string, CSSProperties> = {
+  shell: {
+    minHeight: '100vh',
+    display: 'grid',
+    placeItems: 'center',
+    background: 'var(--bg)',
+    color: 'var(--text)',
+    padding: 24,
+  },
+  panel: {
+    width: 'min(460px, 100%)',
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    padding: 24,
+    background: 'var(--surface)',
+    boxShadow: '0 18px 60px rgba(0, 0, 0, 0.14)',
+  },
+  title: {
+    margin: 0,
+    fontSize: 22,
+    lineHeight: 1.2,
+  },
+  body: {
+    margin: '12px 0 0',
+    color: 'var(--text-muted)',
+    fontSize: 14,
+    lineHeight: 1.5,
+  },
+  error: {
+    marginTop: 14,
+    padding: 12,
+    border: '1px solid var(--record)',
+    borderRadius: 6,
+    color: 'var(--record)',
+    fontFamily: 'var(--mono)',
+    fontSize: 12,
+    lineHeight: 1.4,
+    overflowWrap: 'anywhere',
+  },
+}
+
+function BackendStartupGate({ children }: { children: ReactNode }) {
+  const { t } = useTranslation()
+  const [status, setStatus] = useState<BackendStartupStatus>(() => ({
+    state: window.electronAPI ? 'starting' : 'ready',
+    port: 8765,
+    error: null,
+  }))
+
+  useEffect(() => {
+    const api = window.electronAPI
+    if (!api) return
+
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const next = await api.getBackendStatus()
+        if (!cancelled) setStatus(next)
+      } catch (err) {
+        if (!cancelled) {
+          setStatus({
+            state: 'error',
+            port: 8765,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
+      }
+    }
+
+    void poll()
+    const interval = window.setInterval(() => {
+      void poll()
+    }, 1000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [])
+
+  if (status.state === 'ready') return <>{children}</>
+
+  return (
+    <main style={startupStyles.shell}>
+      <section style={startupStyles.panel} aria-live="polite">
+        <h1 style={startupStyles.title}>
+          {status.state === 'error' ? t('startup.errorTitle') : t('startup.startingTitle')}
+        </h1>
+        <p style={startupStyles.body}>
+          {status.state === 'error'
+            ? t('startup.errorBody')
+            : t('startup.startingBody', { port: status.port })}
+        </p>
+        {status.error && <pre style={startupStyles.error}>{status.error}</pre>}
+      </section>
+    </main>
+  )
 }
 
 export function App() {
@@ -75,37 +176,39 @@ export function App() {
   }, [setScreen])
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      <Sidebar
-        screen={screen}
-        setScreen={setScreen}
-        recording={recording}
-      />
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        <Suspense fallback={null}>
-          <div style={{ display: screen === 'session' ? 'block' : 'none', flex: 1, overflow: 'hidden' }}>
-            <CurrentSession
-              setRecording={setRecording}
-              utterances={utterances}
-              setUtterances={setUtterances}
-              onSessionIdChange={setCurrentSessionId}
-              onIdentifyUnknown={() => setScreen('queue')}
-            />
-          </div>
-        </Suspense>
-        {screen === 'sessions' && <Suspense fallback={null}><AllSessions /></Suspense>}
-        {screen === 'queue' && (
+    <BackendStartupGate>
+      <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+        <Sidebar
+          screen={screen}
+          setScreen={setScreen}
+          recording={recording}
+        />
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <Suspense fallback={null}>
-            <UnknownQueue
-              onApplyLiveResolution={applyLiveResolution}
-              currentSessionId={currentSessionId}
-            />
+            <div style={{ display: screen === 'session' ? 'block' : 'none', flex: 1, overflow: 'hidden' }}>
+              <CurrentSession
+                setRecording={setRecording}
+                utterances={utterances}
+                setUtterances={setUtterances}
+                onSessionIdChange={setCurrentSessionId}
+                onIdentifyUnknown={() => setScreen('queue')}
+              />
+            </div>
           </Suspense>
-        )}
-        {screen === 'contacts' && <Suspense fallback={null}><Contacts /></Suspense>}
-        {screen === 'search' && <Suspense fallback={null}><Search /></Suspense>}
-        {screen === 'settings' && <Suspense fallback={null}><Settings /></Suspense>}
+          {screen === 'sessions' && <Suspense fallback={null}><AllSessions /></Suspense>}
+          {screen === 'queue' && (
+            <Suspense fallback={null}>
+              <UnknownQueue
+                onApplyLiveResolution={applyLiveResolution}
+                currentSessionId={currentSessionId}
+              />
+            </Suspense>
+          )}
+          {screen === 'contacts' && <Suspense fallback={null}><Contacts /></Suspense>}
+          {screen === 'search' && <Suspense fallback={null}><Search /></Suspense>}
+          {screen === 'settings' && <Suspense fallback={null}><Settings /></Suspense>}
+        </div>
       </div>
-    </div>
+    </BackendStartupGate>
   )
 }
