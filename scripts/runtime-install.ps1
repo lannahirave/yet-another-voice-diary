@@ -54,6 +54,21 @@ function Resolve-Uv {
     throw "uv was not installed into $uvDir and no system uv command was found"
 }
 
+function Invoke-Native {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+
+        [Parameter(ValueFromRemainingArguments = $true)]
+        [string[]]$Arguments
+    )
+
+    & $FilePath @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Command failed with exit code ${LASTEXITCODE}: $FilePath $($Arguments -join ' ')"
+    }
+}
+
 function Resolve-CudaTorchIndex {
     if ($env:VOICE_DIARY_FORCE_CPU -eq "1") {
         return ""
@@ -95,11 +110,11 @@ function Install-Nemo {
     }
 
     Invoke-Step "Installing NeMo Sortformer dependencies" {
-        & $Uv pip install cython packaging --python $PythonExe
+        Invoke-Native $Uv pip install cython packaging --python $PythonExe
         if ($CudaIndex) {
-            & $Uv pip install "nemo_toolkit[asr,cu12] @ git+https://github.com/NVIDIA/NeMo.git@main" --python $PythonExe
+            Invoke-Native $Uv pip install "nemo_toolkit[asr,cu12] @ git+https://github.com/NVIDIA/NeMo.git@main" --python $PythonExe
         } else {
-            & $Uv pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@main" --python $PythonExe
+            Invoke-Native $Uv pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@main" --python $PythonExe
         }
     }
 }
@@ -131,15 +146,15 @@ try {
     $torchVariant = if ($cudaIndex) { "cuda-cu126" } else { "cpu" }
 
     Invoke-Step "Ensuring managed Python 3.12 is available" {
-        & $uv python install 3.12
+        Invoke-Native $uv python install 3.12
     }
 
     Invoke-Step "Creating private Python runtime" {
-        & $uv venv $venvDir --python 3.12
+        Invoke-Native $uv venv $venvDir --python 3.12
     }
 
     Invoke-Step "Installing Voice Diary backend dependencies" {
-        & $uv pip install "$backendProject[ml]" --python $pythonExe
+        Invoke-Native $uv pip install "$backendProject[ml]" --python $pythonExe
     }
 
     Invoke-Step "Removing unsupported optional k2 package when present" {
@@ -148,7 +163,7 @@ try {
 
     if ($cudaIndex) {
         Invoke-Step "Installing CUDA PyTorch wheels" {
-            & $uv pip install --force-reinstall torch==2.8.0 torchaudio==2.8.0 torchvision==0.23.0 --index-url $cudaIndex --python $pythonExe
+            Invoke-Native $uv pip install --force-reinstall torch==2.8.0 torchaudio==2.8.0 torchvision==0.23.0 --index-url $cudaIndex --python $pythonExe
         }
     }
 
@@ -156,9 +171,9 @@ try {
 
     Invoke-Step "Verifying backend runtime imports" {
         if ($env:VOICE_DIARY_WITH_NEMO -eq "0") {
-            & $pythonExe -c "import torch; import faster_whisper; import pyannote.audio; import silero_vad; import speechbrain; from backend.providers.devices import normalize_indexed_cuda_device; assert normalize_indexed_cuda_device('cpu') == 'cpu'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+            Invoke-Native $pythonExe -c "import torch; import faster_whisper; import pyannote.audio; import silero_vad; import speechbrain; from backend.providers.devices import normalize_indexed_cuda_device; assert normalize_indexed_cuda_device('cpu') == 'cpu'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
         } else {
-            & $pythonExe -c "import torch; import faster_whisper; import pyannote.audio; import silero_vad; import speechbrain; import nemo.collections.asr.models; from backend.providers.devices import normalize_indexed_cuda_device; assert normalize_indexed_cuda_device('cpu') == 'cpu'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+            Invoke-Native $pythonExe -c "import torch; import faster_whisper; import pyannote.audio; import silero_vad; import speechbrain; import nemo.collections.asr.models; from backend.providers.devices import normalize_indexed_cuda_device; assert normalize_indexed_cuda_device('cpu') == 'cpu'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
         }
     }
 

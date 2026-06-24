@@ -50,7 +50,7 @@ async function startBackend(): Promise<void> {
   backendStatus = { state: 'starting', port: BACKEND_PORT, error: null }
   try {
     await startPythonBackend({
-      appVersion: `${app.getVersion()}-runtime.2`,
+      appVersion: `${app.getVersion()}-runtime.3`,
       devWebAppDir: WEB_APP_DIR,
       userDataDir: app.getPath('userData'),
     })
