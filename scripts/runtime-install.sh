@@ -4,6 +4,7 @@ set -euo pipefail
 SOURCE_ROOT=""
 RUNTIME_ROOT=""
 APP_VERSION=""
+LOG_PATH=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -19,6 +20,10 @@ while [[ $# -gt 0 ]]; do
             APP_VERSION="$2"
             shift 2
             ;;
+        --log-path)
+            LOG_PATH="$2"
+            shift 2
+            ;;
         *)
             echo "[runtime-install] Unknown option: $1" >&2
             exit 1
@@ -26,10 +31,17 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$SOURCE_ROOT" || -z "$RUNTIME_ROOT" || -z "$APP_VERSION" ]]; then
-    echo "[runtime-install] --source-root, --runtime-root, and --app-version are required" >&2
+if [[ -z "$SOURCE_ROOT" || -z "$RUNTIME_ROOT" || -z "$APP_VERSION" || -z "$LOG_PATH" ]]; then
+    echo "[runtime-install] --source-root, --runtime-root, --app-version, and --log-path are required" >&2
     exit 1
 fi
+
+log() {
+    mkdir -p "$(dirname "$LOG_PATH")"
+    local line="[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $1"
+    echo "$line" >>"$LOG_PATH"
+    echo "$1"
+}
 
 write_state() {
     local status="$1"
@@ -42,9 +54,11 @@ write_state() {
   "appVersion": "$APP_VERSION",
   "torchVariant": "$torch_variant",
   "message": "$message",
+  "logPath": "$LOG_PATH",
   "updatedAt": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 }
 EOF
+    log "[runtime-install] state=$status torch=$torch_variant message=$message"
 }
 
 resolve_uv() {
@@ -108,7 +122,7 @@ install_nemo() {
 }
 
 step() {
-    echo "[runtime-install] $1"
+    log "[runtime-install] $1"
 }
 
 SOURCE_ROOT="$(cd "$SOURCE_ROOT" && pwd)"
@@ -122,6 +136,7 @@ if [[ ! -f "$BACKEND_PROJECT/pyproject.toml" ]]; then
 fi
 
 write_state "installing" "unknown"
+log "[runtime-install] source=$SOURCE_ROOT runtime=$RUNTIME_ROOT appVersion=$APP_VERSION"
 
 if ! {
     UV_BIN="$(resolve_uv)"

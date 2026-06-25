@@ -41,6 +41,10 @@ function resolveRuntimeRoot(userDataDir: string): string {
   return path.join(userDataDir, 'backend-runtime')
 }
 
+function resolveLogsDir(userDataDir: string): string {
+  return path.join(userDataDir, 'logs')
+}
+
 function resolveRuntimePython(runtimeRoot: string): string {
   return process.platform === 'win32'
     ? path.join(runtimeRoot, 'venv', 'Scripts', 'python.exe')
@@ -88,28 +92,54 @@ function waitUntilReady(maxAttempts: number): Promise<void> {
   })
 }
 
-function runProcess(command: string, args: string[], cwd: string, label: string): Promise<void> {
+function appendLog(logPath: string, line: string): void {
+  fs.appendFileSync(logPath, `${line}\n`, 'utf8')
+}
+
+function runProcess(command: string, args: string[], cwd: string, label: string, logPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true })
+    appendLog(logPath, `[${new Date().toISOString()}] ${label}: ${command} ${args.join(' ')}`)
+
     const proc = spawn(command, args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env },
     })
 
-    proc.stdout?.on('data', (d: Buffer) => console.log(`[${label}]`, d.toString().trim()))
-    proc.stderr?.on('data', (d: Buffer) => console.error(`[${label}]`, d.toString().trim()))
-    proc.on('error', reject)
+    proc.stdout?.on('data', (d: Buffer) => {
+      const text = d.toString().trim()
+      console.log(`[${label}]`, text)
+      appendLog(logPath, text)
+    })
+    proc.stderr?.on('data', (d: Buffer) => {
+      const text = d.toString().trim()
+      console.error(`[${label}]`, text)
+      appendLog(logPath, text)
+    })
+    proc.on('error', (err) => {
+      appendLog(logPath, `[${new Date().toISOString()}] ${label} failed to start: ${err.message}`)
+      reject(err)
+    })
     proc.on('exit', (code) => {
       if (code === 0) {
+        appendLog(logPath, `[${new Date().toISOString()}] ${label} exited successfully`)
         resolve()
       } else {
-        reject(new Error(`${label} exited with code ${code ?? 'unknown'}`))
+        const message = `${label} exited with code ${code ?? 'unknown'}; see ${logPath}`
+        appendLog(logPath, `[${new Date().toISOString()}] ${message}`)
+        reject(new Error(message))
       }
     })
   })
 }
 
-async function bootstrapPackagedRuntime(resourcesDir: string, runtimeRoot: string, appVersion: string): Promise<void> {
+async function bootstrapPackagedRuntime(
+  resourcesDir: string,
+  runtimeRoot: string,
+  appVersion: string,
+  logPath: string,
+): Promise<void> {
   const scriptsDir = path.join(resourcesDir, 'scripts')
   const command = process.platform === 'win32' ? 'powershell.exe' : '/usr/bin/env'
   const scriptPath = process.platform === 'win32'
@@ -128,6 +158,8 @@ async function bootstrapPackagedRuntime(resourcesDir: string, runtimeRoot: strin
         runtimeRoot,
         '-AppVersion',
         appVersion,
+        '-LogPath',
+        logPath,
       ]
     : [
         'bash',
@@ -138,13 +170,15 @@ async function bootstrapPackagedRuntime(resourcesDir: string, runtimeRoot: strin
         runtimeRoot,
         '--app-version',
         appVersion,
+        '--log-path',
+        logPath,
       ]
 
   if (!fs.existsSync(scriptPath)) {
     throw new Error(`Runtime bootstrap script not found: ${scriptPath}`)
   }
 
-  await runProcess(command, args, resourcesDir, 'runtime-install')
+  await runProcess(command, args, resourcesDir, 'runtime-install', logPath)
 }
 
 export async function startPythonBackend(options: StartBackendOptions): Promise<void> {
@@ -161,8 +195,9 @@ export async function startPythonBackend(options: StartBackendOptions): Promise<
     pythonCommand = resolvePythonCommand(options.devWebAppDir)
   } else {
     const runtimeRoot = resolveRuntimeRoot(options.userDataDir)
+    const logPath = path.join(resolveLogsDir(options.userDataDir), 'runtime-install.log')
     if (runtimeNeedsBootstrap(runtimeRoot, options.appVersion)) {
-      await bootstrapPackagedRuntime(resourcesDir, runtimeRoot, options.appVersion)
+      await bootstrapPackagedRuntime(resourcesDir, runtimeRoot, options.appVersion, logPath)
     }
     backendCwd = resourcesDir
     pythonCommand = resolveRuntimePython(runtimeRoot)

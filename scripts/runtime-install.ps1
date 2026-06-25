@@ -6,10 +6,22 @@ param(
     [string]$RuntimeRoot,
 
     [Parameter(Mandatory = $true)]
-    [string]$AppVersion
+    [string]$AppVersion,
+
+    [Parameter(Mandatory = $true)]
+    [string]$LogPath
 )
 
 $ErrorActionPreference = "Stop"
+
+function Write-Log {
+    param([string]$Message)
+
+    $line = "[$((Get-Date).ToUniversalTime().ToString("o"))] $Message"
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogPath) | Out-Null
+    Add-Content -Encoding UTF8 -Path $LogPath -Value $line
+    Write-Host $Message
+}
 
 function Write-State {
     param(
@@ -24,9 +36,11 @@ function Write-State {
         appVersion = $AppVersion
         torchVariant = $TorchVariant
         message = $Message
+        logPath = $LogPath
         updatedAt = (Get-Date).ToUniversalTime().ToString("o")
     }
     $state | ConvertTo-Json | Set-Content -Encoding UTF8 -Path (Join-Path $RuntimeRoot "install-state.json")
+    Write-Log "[runtime-install] state=$Status torch=$TorchVariant message=$Message"
 }
 
 function Resolve-Uv {
@@ -105,7 +119,7 @@ function Install-Nemo {
     )
 
     if ($env:VOICE_DIARY_WITH_NEMO -eq "0") {
-        Write-Host "[runtime-install] Skipping NeMo Sortformer dependencies by VOICE_DIARY_WITH_NEMO=0"
+        Write-Log "[runtime-install] Skipping NeMo Sortformer dependencies by VOICE_DIARY_WITH_NEMO=0"
         return
     }
 
@@ -125,7 +139,7 @@ function Invoke-Step {
         [scriptblock]$Block
     )
 
-    Write-Host "[runtime-install] $Label"
+    Write-Log "[runtime-install] $Label"
     & $Block
 }
 
@@ -141,6 +155,7 @@ if (-not (Test-Path (Join-Path $backendProject "pyproject.toml"))) {
 Write-State -Status "installing" -TorchVariant "unknown"
 
 try {
+    Write-Log "[runtime-install] source=$SourceRoot runtime=$RuntimeRoot appVersion=$AppVersion"
     $uv = Resolve-Uv
     $cudaIndex = Resolve-CudaTorchIndex
     $torchVariant = if ($cudaIndex) { "cuda-cu126" } else { "cpu" }
@@ -180,5 +195,6 @@ try {
     Write-State -Status "ok" -TorchVariant $torchVariant
 } catch {
     Write-State -Status "error" -TorchVariant "unknown" -Message $_.Exception.Message
+    Write-Log "[runtime-install] ERROR $($_.Exception.Message)"
     throw
 }
