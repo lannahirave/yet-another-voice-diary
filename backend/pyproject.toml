@@ -44,7 +44,9 @@ ml = [
 ]
 ml-nemo = [
   "cython",
-  "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@main",
+  "numba>=0.60",
+  "llvmlite>=0.43",
+  "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@7ccc79b525f205c2c20595a7dfc927051610962c",
 ]
 
 # This pyproject sits inside the `backend` package itself. List subpackages

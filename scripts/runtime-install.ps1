@@ -13,6 +13,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$NemoGitRef = "7ccc79b525f205c2c20595a7dfc927051610962c"
 
 function Write-Log {
     param([string]$Message)
@@ -124,11 +125,12 @@ function Install-Nemo {
     }
 
     Invoke-Step "Installing NeMo Sortformer dependencies" {
+        Write-Log "[runtime-install] NeMo git ref=$NemoGitRef"
         Invoke-Native $Uv pip install cython packaging --python $PythonExe
         if ($CudaIndex) {
-            Invoke-Native $Uv pip install "nemo_toolkit[asr,cu12] @ git+https://github.com/NVIDIA/NeMo.git@main" --python $PythonExe
+            Invoke-Native $Uv pip install "nemo_toolkit[asr,cu12] @ git+https://github.com/NVIDIA/NeMo.git@$NemoGitRef" "numba>=0.60" "llvmlite>=0.43" --python $PythonExe
         } else {
-            Invoke-Native $Uv pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@main" --python $PythonExe
+            Invoke-Native $Uv pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@$NemoGitRef" "numba>=0.60" "llvmlite>=0.43" --python $PythonExe
         }
     }
 }

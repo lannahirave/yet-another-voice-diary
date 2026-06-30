@@ -5,6 +5,7 @@ SOURCE_ROOT=""
 RUNTIME_ROOT=""
 APP_VERSION=""
 LOG_PATH=""
+NEMO_GIT_REF="7ccc79b525f205c2c20595a7dfc927051610962c"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -113,11 +114,12 @@ install_nemo() {
     fi
 
     step "Installing NeMo Sortformer dependencies"
+    log "[runtime-install] NeMo git ref=$NEMO_GIT_REF"
     "$UV_BIN" pip install cython packaging --python "$PYTHON_EXE"
     if [[ -n "${CUDA_INDEX:-}" ]]; then
-        "$UV_BIN" pip install "nemo_toolkit[asr,cu12] @ git+https://github.com/NVIDIA/NeMo.git@main" --python "$PYTHON_EXE"
+        "$UV_BIN" pip install "nemo_toolkit[asr,cu12] @ git+https://github.com/NVIDIA/NeMo.git@$NEMO_GIT_REF" "numba>=0.60" "llvmlite>=0.43" --python "$PYTHON_EXE"
     else
-        "$UV_BIN" pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@main" --python "$PYTHON_EXE"
+        "$UV_BIN" pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@$NEMO_GIT_REF" "numba>=0.60" "llvmlite>=0.43" --python "$PYTHON_EXE"
     fi
 }
 
