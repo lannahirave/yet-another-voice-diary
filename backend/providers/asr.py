@@ -117,8 +117,10 @@ class WhisperASRProvider:
         self._state = "LOADING"
         self._error = None
 
-        device = self.device or self._auto_device()
+        configured_device = None if self.device == "auto" else self.device
+        device = configured_device or self._auto_device()
         use_faster_whisper = device != "mps"
+        faster_whisper_error: Exception | None = None
 
         if use_faster_whisper:
             try:
@@ -137,18 +139,55 @@ class WhisperASRProvider:
                     device,
                     compute_type,
                 )
-                self._model = WhisperModel(
-                    self.model_id,
-                    device=device,
-                    compute_type=compute_type,
-                    cpu_threads=self.cpu_threads,
-                )
-                self._backend = "faster-whisper"
-                self._state = "LOADED"
-                return
+                try:
+                    self._model = WhisperModel(
+                        self.model_id,
+                        device=device,
+                        compute_type=compute_type,
+                        cpu_threads=self.cpu_threads,
+                    )
+                except Exception as exc:
+                    faster_whisper_error = exc
+                    if device == "cuda" and self._is_cuda_runtime_load_error(exc):
+                        cpu_compute_type = (
+                            self.compute_type
+                            if self.compute_type and self.compute_type != "float16"
+                            else "int8"
+                        )
+                        self._error = (
+                            "CUDA ASR runtime unavailable; using CPU "
+                            f"faster-whisper fallback: {exc}"
+                        )
+                        log.warning(self._error)
+                        try:
+                            self._model = WhisperModel(
+                                self.model_id,
+                                device="cpu",
+                                compute_type=cpu_compute_type,
+                                cpu_threads=self.cpu_threads,
+                            )
+                            self._backend = "faster-whisper"
+                            self._state = "LOADED"
+                            return
+                        except Exception as cpu_exc:
+                            faster_whisper_error = cpu_exc
+                            log.exception("CPU faster-whisper fallback failed")
+                            use_faster_whisper = False
+                    else:
+                        log.exception("faster-whisper model load failed")
+                        use_faster_whisper = False
+                else:
+                    self._backend = "faster-whisper"
+                    self._state = "LOADED"
+                    return
 
         if self._load_transformers_model():
-            reason = "MPS device selected" if device == "mps" else "faster-whisper not installed"
+            if device == "mps":
+                reason = "MPS device selected"
+            elif faster_whisper_error is not None:
+                reason = f"faster-whisper failed to load: {faster_whisper_error}"
+            else:
+                reason = "faster-whisper not installed"
             self._error = f"{reason}; using Transformers ASR fallback"
             log.warning(self._error)
             return
@@ -209,6 +248,23 @@ class WhisperASRProvider:
         self._backend = "transformers"
         self._state = "LOADED"
         return True
+
+    @staticmethod
+    def _is_cuda_runtime_load_error(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return any(
+            marker in message
+            for marker in (
+                "cublas",
+                "cudnn",
+                "cuda",
+                "nvrtc",
+                "cufft",
+                "curand",
+                "cannot be loaded",
+                "not found",
+            )
+        )
 
     @staticmethod
     def _transformers_model_id(model_id: str) -> str:
