@@ -91,19 +91,44 @@ resolve_uv() {
 
 resolve_cuda_torch_index() {
     if [[ "${VOICE_DIARY_FORCE_CPU:-0}" = "1" ]]; then
+        log "[runtime-install] CUDA detection skipped by VOICE_DIARY_FORCE_CPU=1" >&2
         return 0
     fi
 
-    if ! command -v nvidia-smi >/dev/null 2>&1; then
+    local nvidia_smi=""
+    if command -v nvidia-smi >/dev/null 2>&1; then
+        nvidia_smi="$(command -v nvidia-smi)"
+    elif [[ -x "/usr/bin/nvidia-smi" ]]; then
+        nvidia_smi="/usr/bin/nvidia-smi"
+    elif [[ -x "/usr/local/bin/nvidia-smi" ]]; then
+        nvidia_smi="/usr/local/bin/nvidia-smi"
+    fi
+
+    if [[ -z "$nvidia_smi" ]]; then
+        log "[runtime-install] NVIDIA CUDA not detected: nvidia-smi was not found" >&2
         return 0
     fi
 
+    log "[runtime-install] Found nvidia-smi at $nvidia_smi" >&2
     local cuda_version
-    cuda_version="$(nvidia-smi 2>/dev/null | grep "CUDA Version" | sed 's/.*CUDA Version: //' | awk '{print $1}' || true)"
+    cuda_version="$("$nvidia_smi" 2>/dev/null | grep -E "CUDA( UMD)? Version" | sed -E 's/.*CUDA( UMD)? Version: //' | awk '{print $1}' || true)"
     local cuda_major="${cuda_version%%.*}"
+    local cuda_minor="${cuda_version#*.}"
+    cuda_minor="${cuda_minor%%.*}"
 
-    if [[ "$cuda_major" = "12" || "$cuda_major" = "13" ]]; then
+    if [[ "$cuda_major" =~ ^[0-9]+$ && "$cuda_minor" =~ ^[0-9]+$ && ( "$cuda_major" -ge 13 || ( "$cuda_major" -eq 12 && "$cuda_minor" -ge 9 ) ) ]]; then
+        log "[runtime-install] NVIDIA CUDA driver $cuda_major.$cuda_minor; using PyTorch cu129 wheels" >&2
+        echo "https://download.pytorch.org/whl/cu129"
+    elif [[ "$cuda_major" =~ ^[0-9]+$ && "$cuda_minor" =~ ^[0-9]+$ && "$cuda_major" -eq 12 && "$cuda_minor" -ge 8 ]]; then
+        log "[runtime-install] NVIDIA CUDA driver $cuda_major.$cuda_minor; using PyTorch cu128 wheels" >&2
+        echo "https://download.pytorch.org/whl/cu128"
+    elif [[ "$cuda_major" =~ ^[0-9]+$ && "$cuda_minor" =~ ^[0-9]+$ && "$cuda_major" -eq 12 && "$cuda_minor" -ge 6 ]]; then
+        log "[runtime-install] NVIDIA CUDA driver $cuda_major.$cuda_minor; using PyTorch cu126 wheels" >&2
         echo "https://download.pytorch.org/whl/cu126"
+    elif [[ -n "$cuda_major" ]]; then
+        log "[runtime-install] NVIDIA CUDA driver $cuda_version is not supported by the pinned torch 2.8.0 runtime; using CPU wheels" >&2
+    else
+        log "[runtime-install] NVIDIA CUDA not detected: nvidia-smi did not report a CUDA Version" >&2
     fi
 }
 
@@ -117,7 +142,7 @@ install_nemo() {
     log "[runtime-install] NeMo git ref=$NEMO_GIT_REF"
     "$UV_BIN" pip install cython packaging --python "$PYTHON_EXE"
     if [[ -n "${CUDA_INDEX:-}" ]]; then
-        "$UV_BIN" pip install "nemo_toolkit[asr,cu12] @ git+https://github.com/NVIDIA/NeMo.git@$NEMO_GIT_REF" "numba>=0.60" "llvmlite>=0.43" --python "$PYTHON_EXE"
+        "$UV_BIN" pip install "nemo_toolkit[asr,cu12] @ git+https://github.com/NVIDIA/NeMo.git@$NEMO_GIT_REF" "numba>=0.60" "llvmlite>=0.43" "cuda-bindings<13" --python "$PYTHON_EXE"
     else
         "$UV_BIN" pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@$NEMO_GIT_REF" "numba>=0.60" "llvmlite>=0.43" --python "$PYTHON_EXE"
     fi
@@ -145,7 +170,7 @@ if ! {
     CUDA_INDEX="$(resolve_cuda_torch_index)"
     TORCH_VARIANT="cpu"
     if [[ -n "$CUDA_INDEX" ]]; then
-        TORCH_VARIANT="cuda-cu126"
+        TORCH_VARIANT="cuda-${CUDA_INDEX##*/}"
     elif [[ "$(uname -s)" = "Darwin" ]]; then
         TORCH_VARIANT="macos-default"
     fi

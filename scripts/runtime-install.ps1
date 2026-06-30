@@ -86,29 +86,57 @@ function Invoke-Native {
 
 function Resolve-CudaTorchIndex {
     if ($env:VOICE_DIARY_FORCE_CPU -eq "1") {
+        Write-Log "[runtime-install] CUDA detection skipped by VOICE_DIARY_FORCE_CPU=1"
         return ""
     }
 
     $nvidiaSmi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
     if (-not $nvidiaSmi) {
+        $system32Smi = Join-Path $env:SystemRoot "System32\nvidia-smi.exe"
+        if (Test-Path $system32Smi) {
+            $nvidiaSmi = [pscustomobject]@{ Source = $system32Smi }
+        }
+    }
+    if (-not $nvidiaSmi -and $env:WINDIR) {
+        $windirSmi = Join-Path $env:WINDIR "System32\nvidia-smi.exe"
+        if (Test-Path $windirSmi) {
+            $nvidiaSmi = [pscustomobject]@{ Source = $windirSmi }
+        }
+    }
+    if (-not $nvidiaSmi) {
+        Write-Log "[runtime-install] NVIDIA CUDA not detected: nvidia-smi was not found"
         return ""
     }
 
-    $smi = & $nvidiaSmi.Source 2>$null | Select-String "CUDA Version" | Select-Object -First 1
+    Write-Log "[runtime-install] Found nvidia-smi at $($nvidiaSmi.Source)"
+    $smi = & $nvidiaSmi.Source 2>$null | Select-String "CUDA( UMD)? Version" | Select-Object -First 1
     if (-not $smi) {
+        Write-Log "[runtime-install] NVIDIA CUDA not detected: nvidia-smi did not report a CUDA Version"
         return ""
     }
 
-    $match = [regex]::Match($smi.Line, "CUDA Version:\s+([0-9]+)\.")
+    $match = [regex]::Match($smi.Line, "CUDA(?: UMD)? Version:\s+([0-9]+)\.([0-9]+)")
     if (-not $match.Success) {
+        Write-Log "[runtime-install] NVIDIA CUDA not detected: could not parse nvidia-smi line '$($smi.Line)'"
         return ""
     }
 
-    $major = $match.Groups[1].Value
-    if ($major -eq "12" -or $major -eq "13") {
+    $major = [int]$match.Groups[1].Value
+    $minor = [int]$match.Groups[2].Value
+    if ($major -ge 13 -or ($major -eq 12 -and $minor -ge 9)) {
+        Write-Log "[runtime-install] NVIDIA CUDA driver $major.$minor; using PyTorch cu129 wheels"
+        return "https://download.pytorch.org/whl/cu129"
+    }
+    if ($major -eq 12 -and $minor -ge 8) {
+        Write-Log "[runtime-install] NVIDIA CUDA driver $major.$minor; using PyTorch cu128 wheels"
+        return "https://download.pytorch.org/whl/cu128"
+    }
+    if ($major -eq 12 -and $minor -ge 6) {
+        Write-Log "[runtime-install] NVIDIA CUDA driver $major.$minor; using PyTorch cu126 wheels"
         return "https://download.pytorch.org/whl/cu126"
     }
 
+    Write-Log "[runtime-install] NVIDIA CUDA driver $major.$minor is not supported by the pinned torch 2.8.0 runtime; using CPU wheels"
     return ""
 }
 
@@ -128,7 +156,7 @@ function Install-Nemo {
         Write-Log "[runtime-install] NeMo git ref=$NemoGitRef"
         Invoke-Native $Uv pip install cython packaging --python $PythonExe
         if ($CudaIndex) {
-            Invoke-Native $Uv pip install "nemo_toolkit[asr,cu12] @ git+https://github.com/NVIDIA/NeMo.git@$NemoGitRef" "numba>=0.60" "llvmlite>=0.43" --python $PythonExe
+            Invoke-Native $Uv pip install "nemo_toolkit[asr,cu12] @ git+https://github.com/NVIDIA/NeMo.git@$NemoGitRef" "numba>=0.60" "llvmlite>=0.43" "cuda-bindings<13" --python $PythonExe
         } else {
             Invoke-Native $Uv pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@$NemoGitRef" "numba>=0.60" "llvmlite>=0.43" --python $PythonExe
         }
@@ -160,7 +188,10 @@ try {
     Write-Log "[runtime-install] source=$SourceRoot runtime=$RuntimeRoot appVersion=$AppVersion"
     $uv = Resolve-Uv
     $cudaIndex = Resolve-CudaTorchIndex
-    $torchVariant = if ($cudaIndex) { "cuda-cu126" } else { "cpu" }
+    $torchVariant = "cpu"
+    if ($cudaIndex -match "/whl/(cu[0-9]+)$") {
+        $torchVariant = "cuda-$($Matches[1])"
+    }
 
     Invoke-Step "Ensuring managed Python 3.12 is available" {
         Invoke-Native $uv python install 3.12

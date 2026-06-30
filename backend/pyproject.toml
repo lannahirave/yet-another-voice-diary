@@ -24,7 +24,7 @@ dev = [
   "mypy>=1",
 ]
 # PyPI installs CPU-only torch wheels on Windows. To use CUDA in this app,
-# preinstall the matching CUDA wheels from https://download.pytorch.org/whl/cu126
+# preinstall matching CUDA wheels from https://download.pytorch.org/whl/
 # before `pip install -e ".[ml]"`. Keep this on the torch 2.8 line because
 # `pyannote.audio==4.0.3` and the current SpeechBrain/PyAnnote stack in
 # `web_app` do not install cleanly against newer torch 2.11 wheels.

@@ -149,17 +149,31 @@ set "CUDA_LABEL=CPU-only"
 set "CUDA_VERSION="
 set "NEMO_CUDA_EXTRA="
 set "smi_line="
+set "NVIDIA_SMI="
 
 if "%FORCE_CPU%"=="1" (
     echo   CPU-only mode requested by --cpu
 ) else (
     where nvidia-smi >nul 2>nul
     if !errorlevel! equ 0 (
-        for /f "tokens=*" %%a in ('nvidia-smi 2^>nul ^| findstr /c:"CUDA Version"') do (
+        set "NVIDIA_SMI=nvidia-smi"
+    ) else if exist "%SystemRoot%\System32\nvidia-smi.exe" (
+        set "NVIDIA_SMI=%SystemRoot%\System32\nvidia-smi.exe"
+    ) else if exist "%WINDIR%\System32\nvidia-smi.exe" (
+        set "NVIDIA_SMI=%WINDIR%\System32\nvidia-smi.exe"
+    )
+
+    if defined NVIDIA_SMI (
+        for /f "tokens=*" %%a in ('"!NVIDIA_SMI!" 2^>nul ^| findstr /r /c:"CUDA.* Version"') do (
             set "smi_line=%%a"
         )
         if defined smi_line (
-            set "CUDA_VERSION=!smi_line:*CUDA Version: =!"
+            set "smi_without_umd=!smi_line:CUDA UMD Version=!"
+            if not "!smi_without_umd!"=="!smi_line!" (
+                set "CUDA_VERSION=!smi_line:*CUDA UMD Version: =!"
+            ) else (
+                set "CUDA_VERSION=!smi_line:*CUDA Version: =!"
+            )
             for /f "tokens=1" %%v in ("!CUDA_VERSION!") do set "CUDA_VERSION=%%v"
         )
     )
@@ -170,20 +184,32 @@ if "%FORCE_CPU%"=="1" (
             set "cuda_minor=%%b"
         )
 
-        if "!cuda_major!"=="12" (
-            set "CUDA_INDEX=https://download.pytorch.org/whl/cu126"
-            set "CUDA_LABEL=CUDA !CUDA_VERSION! (using cu126 wheels)"
+        if !cuda_major! geq 13 (
+            set "CUDA_INDEX=https://download.pytorch.org/whl/cu129"
+            set "CUDA_LABEL=CUDA !CUDA_VERSION! (using cu129 wheels)"
             set "NEMO_CUDA_EXTRA=cu12"
             echo   [OK] NVIDIA GPU detected - driver CUDA !CUDA_VERSION!
-            if not "!cuda_minor!"=="6" (
-                echo         CUDA !CUDA_VERSION! driver - cu126 wheels are backward-compatible
+            echo         CUDA 13.x driver - cu129 wheels are backward-compatible
+        ) else if "!cuda_major!"=="12" (
+            if !cuda_minor! geq 9 (
+                set "CUDA_INDEX=https://download.pytorch.org/whl/cu129"
+                set "CUDA_LABEL=CUDA !CUDA_VERSION! (using cu129 wheels)"
+                set "NEMO_CUDA_EXTRA=cu12"
+                echo   [OK] NVIDIA GPU detected - driver CUDA !CUDA_VERSION!
+            ) else if !cuda_minor! geq 8 (
+                set "CUDA_INDEX=https://download.pytorch.org/whl/cu128"
+                set "CUDA_LABEL=CUDA !CUDA_VERSION! (using cu128 wheels)"
+                set "NEMO_CUDA_EXTRA=cu12"
+                echo   [OK] NVIDIA GPU detected - driver CUDA !CUDA_VERSION!
+            ) else if !cuda_minor! geq 6 (
+                set "CUDA_INDEX=https://download.pytorch.org/whl/cu126"
+                set "CUDA_LABEL=CUDA !CUDA_VERSION! (using cu126 wheels)"
+                set "NEMO_CUDA_EXTRA=cu12"
+                echo   [OK] NVIDIA GPU detected - driver CUDA !CUDA_VERSION!
+            ) else (
+                echo   [WARN] CUDA !CUDA_VERSION! is not supported by torch 2.8.0.
+                echo          Installing CPU-only PyTorch. GPU acceleration will NOT be available.
             )
-        ) else if "!cuda_major!"=="13" (
-            set "CUDA_INDEX=https://download.pytorch.org/whl/cu126"
-            set "CUDA_LABEL=CUDA !CUDA_VERSION! (using cu126 wheels)"
-            set "NEMO_CUDA_EXTRA=cu13"
-            echo   [OK] NVIDIA GPU detected - driver CUDA !CUDA_VERSION!
-            echo         CUDA 13.x driver - cu126 wheels are backward-compatible
         ) else (
             echo   [WARN] CUDA !CUDA_VERSION! is not supported by torch 2.8.0.
             echo          Installing CPU-only PyTorch. GPU acceleration will NOT be available.
@@ -267,10 +293,10 @@ if "%WITH_NEMO%"=="1" (
 
     if defined NEMO_CUDA_EXTRA (
         echo   Installing NeMo from GitHub with [asr,!NEMO_CUDA_EXTRA!] extras...
-        uv pip install "nemo_toolkit[asr,!NEMO_CUDA_EXTRA!] @ git+https://github.com/NVIDIA/NeMo.git@main" --python .venv-ml\Scripts\python.exe
+        uv pip install "nemo_toolkit[asr,!NEMO_CUDA_EXTRA!] @ git+https://github.com/NVIDIA/NeMo.git@7ccc79b525f205c2c20595a7dfc927051610962c" "numba>=0.60" "llvmlite>=0.43" "cuda-bindings<13" --python .venv-ml\Scripts\python.exe
     ) else (
         echo   Installing NeMo from GitHub with [asr] extras...
-        uv pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@main" --python .venv-ml\Scripts\python.exe
+        uv pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@7ccc79b525f205c2c20595a7dfc927051610962c" "numba>=0.60" "llvmlite>=0.43" --python .venv-ml\Scripts\python.exe
     )
     if !errorlevel! neq 0 (
         echo [ERROR] NeMo installation failed.

@@ -75,8 +75,9 @@ D:\web_app\
 - Packaged Electron must not depend on the repo checkout or root `.venv*` folders.
 - Packaged backend runtime is installed under Electron `app.getPath('userData')/backend-runtime`.
 - Runtime bootstrap scripts live in `scripts/runtime-install.ps1` and `scripts/runtime-install.sh`.
-- Runtime bootstrap installs NeMo Sortformer by default so persisted `sortformer-v2.1` configs work in packaged apps. Set `VOICE_DIARY_WITH_NEMO=0` only for an explicit smaller/no-Sortformer runtime.
-- CUDA support is selected at runtime: detect NVIDIA via `nvidia-smi`, install compatible PyTorch CUDA wheels when supported, otherwise fall back to CPU. Do not bundle NVIDIA drivers.
+- Runtime bootstrap installs NeMo Sortformer by default so persisted `sortformer-v2.1` configs work in packaged apps. Set `VOICE_DIARY_WITH_NEMO=0` only for an explicit smaller/no-Sortformer runtime. NeMo is pinned to the known-good Git commit used by `.venv-ml`; do not switch packaged installs back to floating GitHub `main`.
+- NeMo CUDA runtime uses the `cu12` extra plus `cuda-bindings<13`; NeMo's `cu12` dependency pins `cuda-python<13`, and mixing it with CUDA bindings 13.x breaks `cuda.bindings.nvrtc` imports.
+- CUDA support is selected at runtime: detect NVIDIA via `nvidia-smi` from `PATH` or common platform driver locations, install the best pinned PyTorch 2.8 CUDA wheel supported by the driver (`cu126`, `cu128`, or `cu129`), otherwise fall back to CPU. Do not bundle NVIDIA drivers.
 - macOS uses normal PyTorch wheels and relies on MPS when available; CUDA is Windows/Linux NVIDIA only.
 - If changing startup/runtime packaging, check `frontend/electron/python-manager.ts`, `frontend/electron/main.ts`, and `frontend/package.json` together.
 

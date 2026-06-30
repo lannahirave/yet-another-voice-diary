@@ -29,17 +29,35 @@ echo [OK] ffmpeg found
 
 REM Detect CUDA for NeMo extras
 set "NEMO_CUDA_EXTRA="
+set "NVIDIA_SMI="
 where nvidia-smi >nul 2>nul
 if %errorlevel% equ 0 (
-    for /f "tokens=*" %%a in ('nvidia-smi 2^>nul ^| findstr /c:"CUDA Version"') do (
+    set "NVIDIA_SMI=nvidia-smi"
+) else if exist "%SystemRoot%\System32\nvidia-smi.exe" (
+    set "NVIDIA_SMI=%SystemRoot%\System32\nvidia-smi.exe"
+) else if exist "%WINDIR%\System32\nvidia-smi.exe" (
+    set "NVIDIA_SMI=%WINDIR%\System32\nvidia-smi.exe"
+)
+if defined NVIDIA_SMI (
+    for /f "tokens=*" %%a in ('"!NVIDIA_SMI!" 2^>nul ^| findstr /r /c:"CUDA.* Version"') do (
         set "smi_line=%%a"
     )
     if defined smi_line (
-        set "cuda_ver=!smi_line:*CUDA Version: =!"
+        set "smi_without_umd=!smi_line:CUDA UMD Version=!"
+        if not "!smi_without_umd!"=="!smi_line!" (
+            set "cuda_ver=!smi_line:*CUDA UMD Version: =!"
+        ) else (
+            set "cuda_ver=!smi_line:*CUDA Version: =!"
+        )
         for /f "tokens=1" %%v in ("!cuda_ver!") do set "cuda_ver=%%v"
-        for /f "tokens=1 delims=." %%m in ("!cuda_ver!") do (
-            if "%%m"=="12" set "NEMO_CUDA_EXTRA=cu12"
-            if "%%m"=="13" set "NEMO_CUDA_EXTRA=cu13"
+        for /f "tokens=1,2 delims=." %%m in ("!cuda_ver!") do (
+            if %%m geq 13 (
+                set "NEMO_CUDA_EXTRA=cu12"
+            ) else if "%%m"=="12" (
+                if %%n geq 6 (
+                    set "NEMO_CUDA_EXTRA=cu12"
+                )
+            )
         )
     )
 )
@@ -53,10 +71,10 @@ if !errorlevel! neq 0 (
 
 if defined NEMO_CUDA_EXTRA (
     echo Installing NeMo from GitHub with [asr,!NEMO_CUDA_EXTRA!] extras...
-    uv pip install "nemo_toolkit[asr,!NEMO_CUDA_EXTRA!] @ git+https://github.com/NVIDIA/NeMo.git@main" --python .venv-ml\Scripts\python.exe
+    uv pip install "nemo_toolkit[asr,!NEMO_CUDA_EXTRA!] @ git+https://github.com/NVIDIA/NeMo.git@7ccc79b525f205c2c20595a7dfc927051610962c" "numba>=0.60" "llvmlite>=0.43" "cuda-bindings<13" --python .venv-ml\Scripts\python.exe
 ) else (
     echo Installing NeMo from GitHub with [asr] extras CPU-only...
-    uv pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@main" --python .venv-ml\Scripts\python.exe
+    uv pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@7ccc79b525f205c2c20595a7dfc927051610962c" "numba>=0.60" "llvmlite>=0.43" --python .venv-ml\Scripts\python.exe
 )
 
 if !errorlevel! neq 0 (
