@@ -27,6 +27,8 @@ backend/pretrained_models
 .tmp-debug-test*
 /backend/backend/pretrained_models
 /backend/backend/voice_diary.db
+/backend/backend/voice_diary.db-wal
+/backend/backend/voice_diary.db-shm
 .temp-docs
 *.log
 *.pid

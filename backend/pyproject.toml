@@ -58,10 +58,14 @@ packages = [
   "backend.api.routers",
   "backend.storage",
   "backend.providers",
+  "backend.providers.itn",
   "backend.pipeline",
   "backend.identification",
 ]
 package-dir = {"backend" = "."}
+
+[tool.setuptools.package-data]
+"backend.providers.itn" = ["*.json"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
