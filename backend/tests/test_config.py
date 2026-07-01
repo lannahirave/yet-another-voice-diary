@@ -10,6 +10,7 @@ def test_default_config():
     assert config.database is not None
     assert config.pipeline is not None
     assert config.pipeline.speaker_identification_threshold == 0.5
+    assert config.pipeline.vad_min_utterance_ms == 100
 
 
 def test_custom_config():

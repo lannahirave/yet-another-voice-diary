@@ -47,3 +47,38 @@ async def test_pipeline_config_rejects_invalid_itn_selected_maps(client):
 
     assert response.status_code == 400
     assert "invalid ITN map selection" in response.json()["detail"]
+
+
+async def test_pipeline_config_roundtrips_min_utterance_filter(client):
+    response = await client.get("/config")
+
+    assert response.status_code == 200
+    assert response.json()["vad_min_utterance_ms"] == 100
+
+    response = await client.post(
+        "/config/pipeline",
+        json={"vad_min_utterance_ms": 75},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["vad_min_utterance_ms"] == 75
+
+
+async def test_pipeline_config_rejects_non_positive_min_utterance_filter(client):
+    response = await client.post(
+        "/config/pipeline",
+        json={"vad_min_utterance_ms": 0},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "vad_min_utterance_ms must be a positive integer"
+
+
+async def test_pipeline_config_rejects_negative_min_utterance_filter(client):
+    response = await client.post(
+        "/config/pipeline",
+        json={"vad_min_utterance_ms": -25},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "vad_min_utterance_ms must be a positive integer"

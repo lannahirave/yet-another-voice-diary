@@ -12,7 +12,7 @@ const baseConfig: ApiConfig = {
   vad_speech_pad_pre_ms: 300,
   vad_speech_pad_post_ms: 400,
   vad_speech_pad_ms: 200,
-  vad_min_utterance_ms: 300,
+  vad_min_utterance_ms: 100,
   vad_max_utterance_ms: 13000,
   vad_model_id: 'silero',
   speaker_identification_threshold: 0.5,
@@ -131,6 +131,38 @@ describe('Settings', () => {
 
     await waitFor(() => {
       expect(vi.mocked(setPipeline)).toHaveBeenCalledWith({ itn_selected_maps: [] })
+    })
+  })
+
+  it('renders minimum utterance filter as a positive integer input', async () => {
+    renderSettings()
+
+    fireEvent.click(await screen.findByTestId('settings-tab-speech'))
+    const input = await screen.findByTestId('vad-min-utterance-input')
+
+    expect(input).toHaveProperty('value', '100')
+    expect(input.getAttribute('type')).toBe('number')
+    expect(input.getAttribute('min')).toBe('1')
+
+    fireEvent.change(input, { target: { value: '75' } })
+    fireEvent.blur(input)
+
+    await waitFor(() => {
+      expect(vi.mocked(setPipeline)).toHaveBeenCalledWith({ vad_min_utterance_ms: 75 })
+    })
+  })
+
+  it('clamps minimum utterance filter input before saving', async () => {
+    renderSettings()
+
+    fireEvent.click(await screen.findByTestId('settings-tab-speech'))
+    const input = await screen.findByTestId('vad-min-utterance-input')
+
+    fireEvent.change(input, { target: { value: '-20' } })
+    fireEvent.blur(input)
+
+    await waitFor(() => {
+      expect(vi.mocked(setPipeline)).toHaveBeenCalledWith({ vad_min_utterance_ms: 1 })
     })
   })
 })

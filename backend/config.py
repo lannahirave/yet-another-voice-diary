@@ -96,7 +96,7 @@ class PipelineConfig:
     seeds the new fields from this value.
     """
 
-    vad_min_utterance_ms: int = 300
+    vad_min_utterance_ms: int = 100
     """Minimum buffered speech to accept as a real utterance.
 
     Coordinator drops anything shorter than this on end-of-speech, suppressing

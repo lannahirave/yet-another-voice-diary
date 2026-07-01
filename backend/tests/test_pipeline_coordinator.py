@@ -688,6 +688,56 @@ def test_sub_min_utterance_speech_is_discarded() -> None:
     assert diarization.calls == 0
 
 
+def test_default_min_utterance_filter_discards_speech_below_100ms() -> None:
+    asr = FakeASRProvider()
+    diarization = FakeDiarizationProvider()
+    coordinator = PipelineCoordinator(
+        PipelineConfig(vad_threshold=0.5),
+        asr,
+        diarization,
+        FakeEmbeddingProvider(),
+        vad_processor=ScriptedVADProcessor([True, False]),
+    )
+    coordinator.start_session(RecordingSession(id="sess-default-filter-short"))
+
+    utterances: list[Utterance] = []
+    coordinator.on("utterance", utterances.append)
+
+    chunk_50ms = np.ones(800, dtype=np.float32)
+    asyncio.run(coordinator.process_chunk(chunk_50ms, 16000))
+    asyncio.run(coordinator.process_chunk(np.zeros(1, dtype=np.float32), 16000))
+
+    assert utterances == []
+    assert asr.calls == []
+    assert diarization.calls == 0
+
+
+def test_default_min_utterance_filter_allows_100ms_speech() -> None:
+    asr = FakeASRProvider()
+    diarization = FakeDiarizationProvider()
+    coordinator = PipelineCoordinator(
+        PipelineConfig(vad_threshold=0.5),
+        asr,
+        diarization,
+        FakeEmbeddingProvider(),
+        vad_processor=ScriptedVADProcessor([True, False]),
+    )
+    coordinator.start_session(RecordingSession(id="sess-default-filter-boundary"))
+
+    utterances: list[Utterance] = []
+    coordinator.on("utterance", utterances.append)
+
+    chunk_100ms = np.ones(1600, dtype=np.float32)
+    asyncio.run(coordinator.process_chunk(chunk_100ms, 16000))
+    asyncio.run(coordinator.process_chunk(np.zeros(1, dtype=np.float32), 16000))
+
+    assert len(utterances) == 1
+    assert utterances[0].started_ms == 0
+    assert utterances[0].ended_ms == 100
+    assert asr.calls == [(1600, None)]
+    assert diarization.calls == 1
+
+
 def test_intra_utterance_silence_does_not_split_when_vad_stays_voiced() -> None:
     coordinator = PipelineCoordinator(
         PipelineConfig(vad_threshold=0.5, vad_min_utterance_ms=5),

@@ -125,7 +125,7 @@ VAD (Silero) — sustained is_speech boolean per chunk
 Endpointing State Machine:
   ├─ Rising edge → start buffering
   ├─ Speech → continue buffering
-  ├─ Falling edge → flush if speech ≥ 300ms, discard otherwise
+  ├─ Falling edge → flush if speech ≥ configured minimum (100ms default), discard otherwise
   └─ Force flush at 30s monologue cap
   │
   ▼
@@ -142,7 +142,7 @@ Per-Utterance Flush:
 - Diarization fails → full-utterance embedding (ungrouped), error event emitted
 - Embedding fails → segment skipped, error event emitted
 - ASR empty → utterance silently dropped
-- Session-end sub-300ms tail → discarded (prevents junk embeddings)
+- Session-end tail shorter than the configured minimum → discarded (prevents junk embeddings)
 
 ## Provider Architecture
 

@@ -141,6 +141,19 @@ def set_pipeline(payload: PipelineUpdate, request: Request):
             status_code=400,
             detail=f"invalid ITN map selection: {', '.join(invalid_maps)}",
         )
+    min_utterance_ms = updates.get("vad_min_utterance_ms", 1)
+    if (
+        "vad_min_utterance_ms" in updates
+        and (
+            not isinstance(min_utterance_ms, int)
+            or isinstance(min_utterance_ms, bool)
+            or min_utterance_ms < 1
+        )
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="vad_min_utterance_ms must be a positive integer",
+        )
     for field, value in updates.items():
         if hasattr(pipeline, field):
             setattr(pipeline, field, value)

@@ -404,7 +404,7 @@ export function Settings() {
   const [vadMinSilence, setVadMinSilence] = useState(300)
   const [vadPadPre, setVadPadPre] = useState(300)
   const [vadPadPost, setVadPadPost] = useState(400)
-  const [vadMinUtt, setVadMinUtt] = useState(300)
+  const [vadMinUtt, setVadMinUtt] = useState(100)
   const [vadMaxUtt, setVadMaxUtt] = useState(13_000)
   const [savingPipeline, setSavingPipeline] = useState(false)
 
@@ -927,13 +927,18 @@ export function Settings() {
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <input
-                  type="range"
-                  min={50} max={1000}
+                  type="number"
+                  min={1}
+                  step={1}
                   value={vadMinUtt}
                   disabled={savingPipeline}
-                  onChange={(e) => setVadMinUtt(Number(e.target.value))}
-                  onPointerUp={() => commitPipeline({ vad_min_utterance_ms: vadMinUtt })}
-                  style={{ width: 120, accentColor: 'var(--accent)' }}
+                  onChange={(e) => {
+                    const next = Number(e.target.value)
+                    setVadMinUtt(Number.isFinite(next) ? Math.max(1, Math.floor(next)) : 1)
+                  }}
+                  onBlur={() => commitPipeline({ vad_min_utterance_ms: vadMinUtt })}
+                  style={stS.numberInput}
+                  data-testid="vad-min-utterance-input"
                 />
                 <span style={stS.paramValue}>{vadMinUtt} ms</span>
               </div>
@@ -1637,6 +1642,20 @@ const stS: Record<string, CSSProperties> = {
     width: 56,
     textAlign: 'right' as const,
     flexShrink: 0,
+  },
+  numberInput: {
+    width: 86,
+    height: 30,
+    boxSizing: 'border-box',
+    border: '1px solid var(--border)',
+    borderRadius: 6,
+    background: 'var(--surface2)',
+    color: 'var(--text)',
+    fontSize: 13,
+    fontFamily: 'var(--mono)',
+    padding: '4px 8px',
+    textAlign: 'right' as const,
+    outline: 'none',
   },
   infoBox: {
     background: 'var(--surface)',
