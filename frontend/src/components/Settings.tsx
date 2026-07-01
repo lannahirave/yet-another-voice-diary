@@ -419,6 +419,7 @@ export function Settings() {
   const [langAllowlist, setLangAllowlist] = useState<string[]>(['en', 'uk'])
   const [langConfidenceThreshold, setLangConfidenceThreshold] = useState(0.5)
   const [itnEnabled, setItnEnabled] = useState(true)
+  const [itnSelectedMaps, setItnSelectedMaps] = useState<string[]>([])
 
   const configQuery = useConfigQuery()
   const storageQuery = useStorageInfoQuery()
@@ -456,6 +457,7 @@ export function Settings() {
       setLangAllowlist((config.language_allowlist ?? 'en,uk').split(',').map((s) => s.trim()).filter(Boolean))
       setLangConfidenceThreshold(config.language_confidence_threshold ?? 0.5)
       setItnEnabled(config.itn_enabled ?? true)
+      setItnSelectedMaps(config.itn_selected_maps ?? [])
       setActionError(null)
     }
   }, [config])
@@ -479,6 +481,18 @@ export function Settings() {
   const selectedAsrModel = asrProvider?.model_id ?? 'large-v3-turbo'
   const selectedEmbeddingModel = embeddingProvider?.model_id ?? 'ecapa'
   const selectedDiarizationModel = diarizationProvider?.model_id ?? 'pyannote'
+  const itnMapOptions = useMemo<MultiSelectOption[]>(
+    () =>
+      (config?.itn_maps ?? []).map((map) => ({
+        value: map.filename,
+        label: map.valid
+          ? `${map.label} (${map.variant_count})`
+          : `${map.label} (${t('settings.invalid')})`,
+        helperText: map.valid ? map.filename : (map.error ?? map.filename),
+        disabled: !map.valid,
+      })),
+    [config?.itn_maps, t],
+  )
   const thresholdColor =
     threshold > 0.7
       ? 'var(--amber)'
@@ -583,7 +597,7 @@ export function Settings() {
     }
   }
 
-  const commitPipeline = async (fields: Record<string, number | boolean | string | null>) => {
+  const commitPipeline = async (fields: Record<string, number | boolean | string | string[] | null>) => {
     if (!config || savingPipeline) return
     setSavingPipeline(true)
     setActionError(null)
@@ -1065,6 +1079,30 @@ export function Settings() {
                 }}
                 disabled={loadingConfig || !config || savingPipeline}
               />
+            </div>
+
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.itnMapsLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.itnMapsDesc')}</div>
+              </div>
+              <div style={{ width: 260 }}>
+                <MultiSelect
+                  options={itnMapOptions}
+                  selected={itnSelectedMaps}
+                  onChange={(vals) => {
+                    setItnSelectedMaps(vals)
+                    void commitPipeline({ itn_selected_maps: vals })
+                  }}
+                  placeholder={t('settings.itnMapsPlaceholder')}
+                  disabled={!itnEnabled || savingPipeline}
+                  dataTestId="itn-maps"
+                />
+              </div>
+            </div>
+
+            <div style={stS.inlineHint}>
+              {savingPipeline ? t('settings.saving') : t('settings.itnMapsHint')}
             </div>
 
             <Divider />

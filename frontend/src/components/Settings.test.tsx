@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Settings } from './Settings'
 import type { ApiConfig } from '../types/api'
+import { setPipeline } from '../api/config'
 
 const baseConfig: ApiConfig = {
   vad_threshold: 0.6,
@@ -26,6 +27,11 @@ const baseConfig: ApiConfig = {
   ],
   blocklist_enabled: false,
   itn_enabled: true,
+  itn_maps: [
+    { filename: 'valid.json', label: 'valid', valid: true, variant_count: 2, error: null },
+    { filename: 'bad.json', label: 'bad', valid: false, variant_count: 0, error: 'missing transliterations object' },
+  ],
+  itn_selected_maps: ['valid.json'],
   elevenlabs_api_token_masked: 'not set',
   asr_no_speech_threshold: 0.6,
   asr_compression_ratio_threshold: 2.4,
@@ -108,6 +114,23 @@ describe('Settings', () => {
     })
     expect(screen.getByText('settings.textCleanupSection')).toBeDefined()
     expect(screen.getByText('settings.itnEnabledLabel')).toBeDefined()
+    expect(screen.getByTestId('itn-maps')).toBeDefined()
     expect(screen.queryByTestId('threshold-slider')).toBeNull()
+  })
+
+  it('renders ITN map selector and saves selected valid maps', async () => {
+    renderSettings()
+
+    fireEvent.click(await screen.findByTestId('settings-tab-transcription'))
+    fireEvent.click(screen.getByTestId('itn-maps').querySelector('[role="combobox"]') as HTMLElement)
+
+    expect(await screen.findByTestId('ms-option-valid.json')).toBeDefined()
+    expect(screen.getByTestId('ms-option-bad.json').getAttribute('aria-disabled')).toBe('true')
+
+    fireEvent.click(screen.getByTestId('ms-option-valid.json'))
+
+    await waitFor(() => {
+      expect(vi.mocked(setPipeline)).toHaveBeenCalledWith({ itn_selected_maps: [] })
+    })
   })
 })

@@ -4,6 +4,8 @@ import type { CSSProperties } from 'react'
 export interface MultiSelectOption {
   value: string
   label: string
+  helperText?: string
+  disabled?: boolean
 }
 
 interface MultiSelectProps {
@@ -125,6 +127,10 @@ const stS: Record<string, CSSProperties> = {
   optionRowSelected: {
     background: 'rgba(245,78,0,0.06)',
   },
+  optionRowDisabled: {
+    cursor: 'default',
+    opacity: 0.55,
+  },
   checkbox: {
     width: 14,
     height: 14,
@@ -163,6 +169,18 @@ const stS: Record<string, CSSProperties> = {
     fontFamily: 'var(--mono)',
     textAlign: 'center',
   },
+  optionText: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+    minWidth: 0,
+  },
+  optionHelper: {
+    color: 'var(--text-muted)',
+    fontSize: 10.5,
+    whiteSpace: 'normal',
+    overflowWrap: 'anywhere',
+  },
 }
 
 const MAX_BADGES = 3
@@ -200,12 +218,13 @@ export function MultiSelect({
 
   const toggleOption = useCallback(
     (value: string) => {
+      if (options.find((option) => option.value === value)?.disabled) return
       const next = selected.includes(value)
         ? selected.filter((v) => v !== value)
         : [...selected, value]
       onChange(next)
     },
-    [selected, onChange],
+    [options, selected, onChange],
   )
 
   const clearAll = useCallback(() => {
@@ -288,9 +307,11 @@ export function MultiSelect({
                   style={{
                     ...stS.optionRow,
                     ...(isChecked ? stS.optionRowSelected : {}),
+                    ...(o.disabled ? stS.optionRowDisabled : {}),
                   }}
                   data-testid={`ms-option-${o.value}`}
                   onClick={() => toggleOption(o.value)}
+                  aria-disabled={o.disabled}
                 >
                   <span
                     style={{
@@ -300,7 +321,12 @@ export function MultiSelect({
                   >
                     {isChecked ? '✓' : ''}
                   </span>
-                  <span>{o.label}</span>
+                  <span style={stS.optionText}>
+                    <span>{o.label}</span>
+                    {o.helperText && (
+                      <span style={stS.optionHelper}>{o.helperText}</span>
+                    )}
+                  </span>
                 </div>
               )
             })}

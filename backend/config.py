@@ -128,6 +128,9 @@ class PipelineConfig:
     itn_enabled: bool = True
     """If true, normalize mapped ASR transliterations into display terms."""
 
+    itn_selected_maps: Optional[list[str]] = None
+    """Selected ITN map filenames. None preserves legacy all-valid-map behavior."""
+
     asr_no_speech_threshold: float = 0.6  # Vexa default, keep
     asr_compression_ratio_threshold: float = 2.4  # Vexa default, keep
     asr_repetition_penalty: float = 1.1  # Vexa default, keep

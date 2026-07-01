@@ -168,6 +168,14 @@ class ProviderStatus(BaseModel):
     error: Optional[str] = None
 
 
+class ITNMapOut(BaseModel):
+    filename: str
+    label: str
+    valid: bool
+    variant_count: int = 0
+    error: Optional[str] = None
+
+
 class ConfigOut(BaseModel):
     vad_threshold: float
     vad_negative_threshold: float
@@ -186,6 +194,8 @@ class ConfigOut(BaseModel):
     providers: list[ProviderStatus]
     blocklist_enabled: bool = False
     itn_enabled: bool = True
+    itn_maps: list[ITNMapOut] = Field(default_factory=list)
+    itn_selected_maps: list[str] = Field(default_factory=list)
     elevenlabs_api_token_masked: str = "not set"
     asr_no_speech_threshold: float = 0.6
     asr_compression_ratio_threshold: float = 2.4
@@ -217,6 +227,7 @@ class PipelineUpdate(BaseModel):
     vad_max_utterance_ms: Optional[int] = None
     speaker_identification_threshold: Optional[float] = None
     itn_enabled: Optional[bool] = None
+    itn_selected_maps: Optional[list[str]] = None
     asr_no_speech_threshold: Optional[float] = None
     asr_compression_ratio_threshold: Optional[float] = None
     asr_repetition_penalty: Optional[float] = None

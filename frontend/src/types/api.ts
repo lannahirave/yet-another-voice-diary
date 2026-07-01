@@ -94,6 +94,14 @@ export interface ApiProviderStatus {
   error: string | null
 }
 
+export interface ApiITNMap {
+  filename: string
+  label: string
+  valid: boolean
+  variant_count: number
+  error: string | null
+}
+
 export interface ApiConfig {
   vad_threshold: number
   vad_negative_threshold: number
@@ -112,6 +120,8 @@ export interface ApiConfig {
   providers: ApiProviderStatus[]
   blocklist_enabled: boolean
   itn_enabled: boolean
+  itn_maps: ApiITNMap[]
+  itn_selected_maps: string[]
   elevenlabs_api_token_masked: string
   asr_no_speech_threshold: number
   asr_compression_ratio_threshold: number

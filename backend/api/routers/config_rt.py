@@ -10,11 +10,17 @@ from ...providers.asr import WhisperASRProvider
 from ...providers.diarization import create_diarization_provider
 from ...providers.elevenlabs import ElevenLabsASRProvider
 from ...providers.embedding import ECAPATDNNEmbeddingProvider
+from ...providers.itn import (
+    discover_itn_maps,
+    resolve_selected_itn_maps,
+    validate_selected_itn_maps,
+)
 from ..schemas import (
     BlocklistUpdate,
     ConfigOut,
     DeviceUpdate,
     ElevenLabsTokenUpdate,
+    ITNMapOut,
     PipelineUpdate,
     PreloadOnStartUpdate,
     ProviderSelect,
@@ -58,6 +64,19 @@ def _provider_status(kind: str, provider: object) -> ProviderStatus:
     )
 
 
+def _itn_maps_out() -> list[ITNMapOut]:
+    return [
+        ITNMapOut(
+            filename=info.filename,
+            label=info.label,
+            valid=info.valid,
+            variant_count=info.variant_count,
+            error=info.error,
+        )
+        for info in discover_itn_maps()
+    ]
+
+
 @router.get("", response_model=ConfigOut)
 def get_config_rt(request: Request):
     cfg = request.app.state.config
@@ -79,6 +98,8 @@ def get_config_rt(request: Request):
         device=cfg.providers.device,
         blocklist_enabled=cfg.pipeline.blocklist_enabled,
         itn_enabled=cfg.pipeline.itn_enabled,
+        itn_maps=_itn_maps_out(),
+        itn_selected_maps=resolve_selected_itn_maps(cfg.pipeline.itn_selected_maps),
         elevenlabs_api_token_masked=_mask_token(cfg.providers.elevenlabs_api_token),
         asr_no_speech_threshold=cfg.pipeline.asr_no_speech_threshold,
         asr_compression_ratio_threshold=cfg.pipeline.asr_compression_ratio_threshold,
@@ -113,6 +134,13 @@ def set_pipeline(payload: PipelineUpdate, request: Request):
     """
     pipeline = request.app.state.config.pipeline
     updates = payload.model_dump(exclude_unset=True)
+    selected_maps = updates.get("itn_selected_maps", None)
+    invalid_maps = validate_selected_itn_maps(selected_maps) if "itn_selected_maps" in updates else []
+    if invalid_maps:
+        raise HTTPException(
+            status_code=400,
+            detail=f"invalid ITN map selection: {', '.join(invalid_maps)}",
+        )
     for field, value in updates.items():
         if hasattr(pipeline, field):
             setattr(pipeline, field, value)
