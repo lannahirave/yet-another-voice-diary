@@ -26,6 +26,7 @@ def test_config_save_and_load(tmp_path):
     config = BackendConfig.default()
     config.database.path = tmp_path / "voice_diary.db"
     config.pipeline.speaker_identification_threshold = 0.91
+    config.pipeline.itn_enabled = False
     config.providers.asr_model_id = "whisper-tiny"
 
     path = tmp_path / "config.json"
@@ -34,6 +35,7 @@ def test_config_save_and_load(tmp_path):
 
     assert loaded.database.path == Path(tmp_path / "voice_diary.db")
     assert loaded.pipeline.speaker_identification_threshold == 0.91
+    assert loaded.pipeline.itn_enabled is False
     assert loaded.providers.asr_model_id == "whisper-tiny"
 
 
@@ -78,4 +80,5 @@ def test_load_rewrites_legacy_invalid_diarization_model_id(tmp_path):
     loaded = BackendConfig.load(path)
 
     assert loaded.providers.diarization_model_id == "pyannote"
+    assert loaded.pipeline.itn_enabled is True
     assert '"diarization_model_id": "pyannote"' in path.read_text(encoding="utf-8")

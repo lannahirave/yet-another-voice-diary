@@ -29,7 +29,14 @@ type ModelState =
   | 'ERROR'
 
 type ProviderKind = 'asr' | 'embedding' | 'diarization' | 'vad'
-type SectionId = 'providers' | 'pipeline' | 'memory' | 'storage' | 'general'
+type SectionId =
+  | 'providers'
+  | 'transcription'
+  | 'speech'
+  | 'speakers'
+  | 'runtime'
+  | 'storage'
+  | 'appearance'
 
 const STATE_COLORS: Record<ModelState, string> = {
   LOADED: 'var(--green)',
@@ -164,11 +171,13 @@ const LANGUAGE_OPTIONS: MultiSelectOption[] = [
 ]
 
 const sectionsBase: Array<{ id: SectionId; labelKey: string }> = [
-  { id: 'providers', labelKey: 'settings.tabProviders' },
-  { id: 'pipeline', labelKey: 'settings.tabPipeline' },
-  { id: 'memory', labelKey: 'settings.tabMemory' },
+  { id: 'providers', labelKey: 'settings.tabModels' },
+  { id: 'transcription', labelKey: 'settings.tabTranscription' },
+  { id: 'speech', labelKey: 'settings.tabSpeechDetection' },
+  { id: 'speakers', labelKey: 'settings.tabSpeakerIdentification' },
+  { id: 'runtime', labelKey: 'settings.tabRuntime' },
   { id: 'storage', labelKey: 'settings.tabStorage' },
-  { id: 'general', labelKey: 'settings.tabGeneral' },
+  { id: 'appearance', labelKey: 'settings.tabAppearance' },
 ]
 
 function formatBytes(n: number): string {
@@ -409,6 +418,7 @@ export function Settings() {
   const [langAllowlistEnabled, setLangAllowlistEnabled] = useState(false)
   const [langAllowlist, setLangAllowlist] = useState<string[]>(['en', 'uk'])
   const [langConfidenceThreshold, setLangConfidenceThreshold] = useState(0.5)
+  const [itnEnabled, setItnEnabled] = useState(true)
 
   const configQuery = useConfigQuery()
   const storageQuery = useStorageInfoQuery()
@@ -445,6 +455,7 @@ export function Settings() {
       setLangAllowlistEnabled(config.language_allowlist_enabled ?? false)
       setLangAllowlist((config.language_allowlist ?? 'en,uk').split(',').map((s) => s.trim()).filter(Boolean))
       setLangConfidenceThreshold(config.language_confidence_threshold ?? 0.5)
+      setItnEnabled(config.itn_enabled ?? true)
       setActionError(null)
     }
   }, [config])
@@ -792,7 +803,7 @@ export function Settings() {
           </>
         )}
 
-        {active === 'pipeline' && (
+        {active === 'speech' && (
           <>
             <SectionTitle>{t('settings.pipelineSection')}</SectionTitle>
 
@@ -936,10 +947,12 @@ export function Settings() {
             <div style={stS.inlineHint}>
               {savingPipeline ? t('settings.saving') : t('settings.vadRequiresRestart')}
             </div>
+          </>
+        )}
 
-            <Divider />
-
-            <SectionTitle mt={20}>{t('settings.asrQualitySection')}</SectionTitle>
+        {active === 'transcription' && (
+          <>
+            <SectionTitle>{t('settings.asrQualitySection')}</SectionTitle>
 
             <div style={stS.settingRow}>
               <div style={{ flex: 1 }}>
@@ -1019,26 +1032,44 @@ export function Settings() {
 
             <Divider />
 
-            <SectionTitle mt={20}>{t('settings.speakerSection')}</SectionTitle>
+            <SectionTitle mt={20}>{t('settings.textCleanupSection')}</SectionTitle>
 
             <div style={stS.settingRow}>
               <div style={{ flex: 1 }}>
-                <div style={stS.settingName}>{t('settings.micSelfContactLabel')}</div>
-                <div style={stS.settingDesc}>{t('settings.micSelfContactDesc')}</div>
+                <div style={stS.settingName}>
+                  {t('settings.blocklistEnabled')}
+                </div>
+                <div style={stS.settingDesc}>
+                  {t('settings.blocklistEnabledDesc')}
+                </div>
               </div>
-              <div style={{ width: 220 }}>
-                <ContactPicker
-                  selectedId={micSelfContactId}
-                  onChange={(id) => {
-                    setMicSelfContactId(id)
-                    void commitPipeline({ mic_self_contact_id: id })
-                  }}
-                  placeholder={t('settings.micSelfContactPlaceholder')}
-                  disabled={loadingConfig || !config || savingPipeline}
-                  dataTestId="mic-self-contact"
-                />
-              </div>
+              <Toggle
+                dataTestId="blocklist-toggle"
+                on={blocklistEnabled}
+                onChange={(next) => void commitBlocklistEnabled(next)}
+                disabled={loadingConfig || !config || savingBlocklist}
+              />
             </div>
+
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.itnEnabledLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.itnEnabledDesc')}</div>
+              </div>
+              <Toggle
+                dataTestId="itn-toggle"
+                on={itnEnabled}
+                onChange={(next) => {
+                  setItnEnabled(next)
+                  void commitPipeline({ itn_enabled: next })
+                }}
+                disabled={loadingConfig || !config || savingPipeline}
+              />
+            </div>
+
+            <Divider />
+
+            <SectionTitle mt={20}>{t('settings.draftSection')}</SectionTitle>
 
             <div style={stS.settingRow}>
               <div style={{ flex: 1 }}>
@@ -1120,67 +1151,35 @@ export function Settings() {
             </div>
 
             <div style={stS.inlineHint}>
-              {savingPipeline ? t('settings.saving') : t('settings.speakerHint')}
-            </div>
-
-            <div style={stS.inlineHint}>
               {savingPipeline ? t('settings.saving') : t('settings.asrParamsHint')}
             </div>
           </>
         )}
 
-        {active === 'memory' && (
+        {active === 'speakers' && (
           <>
-            <SectionTitle>{t('settings.memoryBehavior')}</SectionTitle>
+            <SectionTitle>{t('settings.speakerSection')}</SectionTitle>
             <div style={stS.settingRow}>
               <div style={{ flex: 1 }}>
-                <div style={stS.settingName}>
-                  {t('settings.unloadAfterStop')}
-                </div>
-                <div style={stS.settingDesc}>
-                  {t('settings.unloadAfterStopDesc')}
-                </div>
+                <div style={stS.settingName}>{t('settings.micSelfContactLabel')}</div>
+                <div style={stS.settingDesc}>{t('settings.micSelfContactDesc')}</div>
               </div>
-              <Toggle
-                dataTestId="unload-toggle"
-                on={unloadAfterStop}
-                onChange={(next) => void commitUnloadAfterStop(next)}
-                disabled={loadingConfig || !config || savingUnload}
-              />
-            </div>
-            <div style={stS.settingRow}>
-              <div style={{ flex: 1 }}>
-                <div style={stS.settingName}>
-                  {t('settings.preloadOnStart')}
-                </div>
-                <div style={stS.settingDesc}>
-                  {t('settings.preloadOnStartDesc')}
-                </div>
+              <div style={{ width: 220 }}>
+                <ContactPicker
+                  selectedId={micSelfContactId}
+                  onChange={(id) => {
+                    setMicSelfContactId(id)
+                    void commitPipeline({ mic_self_contact_id: id })
+                  }}
+                  placeholder={t('settings.micSelfContactPlaceholder')}
+                  disabled={loadingConfig || !config || savingPipeline}
+                  dataTestId="mic-self-contact"
+                />
               </div>
-              <Toggle
-                dataTestId="preload-toggle"
-                on={preloadOnStart}
-                onChange={(next) => void commitPreloadOnStart(next)}
-                disabled={loadingConfig || !config || savingPreload}
-              />
             </div>
-            <div style={stS.settingRow}>
-              <div style={{ flex: 1 }}>
-                <div style={stS.settingName}>
-                  {t('settings.blocklistEnabled')}
-                </div>
-                <div style={stS.settingDesc}>
-                  {t('settings.blocklistEnabledDesc')}
-                </div>
-              </div>
-              <Toggle
-                dataTestId="blocklist-toggle"
-                on={blocklistEnabled}
-                onChange={(next) => void commitBlocklistEnabled(next)}
-                disabled={loadingConfig || !config || savingBlocklist}
-              />
-            </div>
+
             <Divider />
+
             <div style={{ paddingTop: 12 }}>
               <div style={stS.settingName}>{t('settings.thresholdLabel')}</div>
               <div style={stS.settingDesc}>
@@ -1265,6 +1264,47 @@ export function Settings() {
                 {savingThreshold ? t('settings.saving') : t('settings.thresholdHint')}
               </div>
             </div>
+            <div style={stS.inlineHint}>
+              {savingPipeline ? t('settings.saving') : t('settings.speakerHint')}
+            </div>
+          </>
+        )}
+
+        {active === 'runtime' && (
+          <>
+            <SectionTitle>{t('settings.runtimeBehavior')}</SectionTitle>
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>
+                  {t('settings.unloadAfterStop')}
+                </div>
+                <div style={stS.settingDesc}>
+                  {t('settings.unloadAfterStopDesc')}
+                </div>
+              </div>
+              <Toggle
+                dataTestId="unload-toggle"
+                on={unloadAfterStop}
+                onChange={(next) => void commitUnloadAfterStop(next)}
+                disabled={loadingConfig || !config || savingUnload}
+              />
+            </div>
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>
+                  {t('settings.preloadOnStart')}
+                </div>
+                <div style={stS.settingDesc}>
+                  {t('settings.preloadOnStartDesc')}
+                </div>
+              </div>
+              <Toggle
+                dataTestId="preload-toggle"
+                on={preloadOnStart}
+                onChange={(next) => void commitPreloadOnStart(next)}
+                disabled={loadingConfig || !config || savingPreload}
+              />
+            </div>
           </>
         )}
 
@@ -1317,6 +1357,12 @@ export function Settings() {
                 </div>
               ))}
             </div>
+          </>
+        )}
+
+        {active === 'appearance' && (
+          <>
+            <SectionTitle>{t('settings.appearance')}</SectionTitle>
             <div style={stS.settingRow}>
               <div style={stS.settingName}>{t('settings.theme')}</div>
               <div style={{ display: 'flex', gap: 5 }}>
@@ -1347,12 +1393,6 @@ export function Settings() {
                 })}
               </div>
             </div>
-          </>
-        )}
-
-        {active === 'general' && (
-          <>
-            <SectionTitle>{t('settings.general')}</SectionTitle>
             <div style={stS.settingRow}>
               <div style={stS.settingName}>{t('settings.uiLang')}</div>
               <div style={{ display: 'flex', gap: 5 }}>

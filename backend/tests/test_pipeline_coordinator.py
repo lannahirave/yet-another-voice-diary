@@ -519,6 +519,27 @@ def test_final_utterance_transcript_is_itn_normalized() -> None:
     assert [u.transcript for u in utterances] == ["api"]
 
 
+def test_final_utterance_transcript_skips_itn_when_disabled() -> None:
+    coordinator = PipelineCoordinator(
+        PipelineConfig(**_TEST_PIPELINE_CFG, itn_enabled=False),
+        SequenceASRProvider(["апі"]),
+        FakeDiarizationProvider(),
+        FakeEmbeddingProvider(),
+        vad_processor=FakeVADProcessor(),
+    )
+    coordinator.start_session(RecordingSession(id="sess-itn-off", language_hint="uk"))
+
+    utterances: list[Utterance] = []
+    coordinator.on("utterance", utterances.append)
+
+    speech = np.ones(1600, dtype=np.float32)
+    silence = np.zeros(1600, dtype=np.float32)
+    asyncio.run(coordinator.process_chunk(speech, 16000))
+    asyncio.run(coordinator.process_chunk(silence, 16000))
+
+    assert [u.transcript for u in utterances] == ["апі"]
+
+
 def test_draft_utterance_transcript_is_itn_normalized() -> None:
     coordinator = PipelineCoordinator(
         PipelineConfig(
@@ -548,6 +569,38 @@ def test_draft_utterance_transcript_is_itn_normalized() -> None:
 
     assert seen.wait(timeout=2.0)
     assert drafts[0]["transcript"] == "api"
+
+
+def test_draft_utterance_transcript_skips_itn_when_disabled() -> None:
+    coordinator = PipelineCoordinator(
+        PipelineConfig(
+            **_TEST_PIPELINE_CFG,
+            draft_enabled=True,
+            draft_interval_ms=1,
+            itn_enabled=False,
+        ),
+        FakeASRProvider(),
+        FakeDiarizationProvider(),
+        FakeEmbeddingProvider(),
+        vad_processor=FakeVADProcessor(),
+    )
+    coordinator._build_draft_provider = lambda: SequenceASRProvider(["апі"])  # type: ignore[method-assign]
+    coordinator.start_session(RecordingSession(id="sess-draft-itn-off", language_hint="uk"))
+
+    seen = threading.Event()
+    drafts: list[dict] = []
+
+    def on_draft(payload: dict) -> None:
+        drafts.append(payload)
+        seen.set()
+
+    coordinator.on("draft_utterance", on_draft)
+
+    speech = np.ones(1600, dtype=np.float32)
+    asyncio.run(coordinator.process_chunk(speech, 16000))
+
+    assert seen.wait(timeout=2.0)
+    assert drafts[0]["transcript"] == "апі"
 
 
 def test_pipeline_still_emits_utterance_when_diarization_fails() -> None:

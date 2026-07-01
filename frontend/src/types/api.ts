@@ -111,6 +111,7 @@ export interface ApiConfig {
   device: string
   providers: ApiProviderStatus[]
   blocklist_enabled: boolean
+  itn_enabled: boolean
   elevenlabs_api_token_masked: string
   asr_no_speech_threshold: number
   asr_compression_ratio_threshold: number

@@ -185,6 +185,7 @@ class ConfigOut(BaseModel):
     device: str = "auto"
     providers: list[ProviderStatus]
     blocklist_enabled: bool = False
+    itn_enabled: bool = True
     elevenlabs_api_token_masked: str = "not set"
     asr_no_speech_threshold: float = 0.6
     asr_compression_ratio_threshold: float = 2.4
@@ -215,6 +216,7 @@ class PipelineUpdate(BaseModel):
     vad_min_utterance_ms: Optional[int] = None
     vad_max_utterance_ms: Optional[int] = None
     speaker_identification_threshold: Optional[float] = None
+    itn_enabled: Optional[bool] = None
     asr_no_speech_threshold: Optional[float] = None
     asr_compression_ratio_threshold: Optional[float] = None
     asr_repetition_penalty: Optional[float] = None

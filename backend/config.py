@@ -125,6 +125,9 @@ class PipelineConfig:
     blocklist_enabled: bool = False
     """If true, drop Whisper hallucination transcripts (off by default)."""
 
+    itn_enabled: bool = True
+    """If true, normalize mapped ASR transliterations into display terms."""
+
     asr_no_speech_threshold: float = 0.6  # Vexa default, keep
     asr_compression_ratio_threshold: float = 2.4  # Vexa default, keep
     asr_repetition_penalty: float = 1.1  # Vexa default, keep

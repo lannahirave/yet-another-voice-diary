@@ -78,6 +78,7 @@ def get_config_rt(request: Request):
         preload_on_start=cfg.providers.preload_on_start,
         device=cfg.providers.device,
         blocklist_enabled=cfg.pipeline.blocklist_enabled,
+        itn_enabled=cfg.pipeline.itn_enabled,
         elevenlabs_api_token_masked=_mask_token(cfg.providers.elevenlabs_api_token),
         asr_no_speech_threshold=cfg.pipeline.asr_no_speech_threshold,
         asr_compression_ratio_threshold=cfg.pipeline.asr_compression_ratio_threshold,

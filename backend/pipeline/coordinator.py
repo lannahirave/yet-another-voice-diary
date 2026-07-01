@@ -414,7 +414,8 @@ class PipelineCoordinator:
 
             asr_ms = (time.perf_counter() - asr_t0) * 1000.0
             utterance = self._apply_language_policy(turn.audio, utterance)
-            utterance.transcript = normalize_transcript(utterance.transcript)
+            if self.config.itn_enabled:
+                utterance.transcript = normalize_transcript(utterance.transcript)
             _info(
                 "whisper transcription finished key=%s turn_idx=%d speaker=%s model=%s utterance_id=%s transcript_chars=%d language=%s confidence=%.3f asr_ms=%.2f cuda=%s",
                 processing_key,
@@ -626,7 +627,8 @@ class PipelineCoordinator:
         def _run_draft() -> None:
             try:
                 utterance = self._draft_asr.transcribe(snap.audio, None)
-                utterance.transcript = normalize_transcript(utterance.transcript)
+                if self.config.itn_enabled:
+                    utterance.transcript = normalize_transcript(utterance.transcript)
                 if not utterance.transcript.strip():
                     return
                 self._emit(
