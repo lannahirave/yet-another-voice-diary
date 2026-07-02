@@ -51,7 +51,9 @@ def test_runtime_installers_do_not_use_floating_nemo_main() -> None:
         assert "7ccc79b525f205c2c20595a7dfc927051610962c" in text
 
 
-def test_runtime_installers_use_python312_safe_nemo_constraints() -> None:
+def test_runtime_installers_use_known_good_nemo_numba_constraints() -> None:
+    # NeMo imports failed in packaged CUDA runtimes with numba 0.66.0 /
+    # llvmlite 0.48.0: numba.cuda.types lacked NPDatetime.
     checked_paths = [
         "backend/pyproject.toml",
         "scripts/install.bat",
@@ -63,8 +65,8 @@ def test_runtime_installers_use_python312_safe_nemo_constraints() -> None:
 
     for path in checked_paths:
         text = _read(path)
-        assert "numba>=0.60" in text
-        assert "llvmlite>=0.43" in text
+        assert "numba==0.65.1" in text
+        assert "llvmlite==0.47.0" in text
 
 
 def test_cuda_nemo_installs_pin_cuda_bindings_to_match_cuda_python_12() -> None:

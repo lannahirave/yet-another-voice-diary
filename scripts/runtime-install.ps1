@@ -156,9 +156,9 @@ function Install-Nemo {
         Write-Log "[runtime-install] NeMo git ref=$NemoGitRef"
         Invoke-Native $Uv pip install cython packaging --python $PythonExe
         if ($CudaIndex) {
-            Invoke-Native $Uv pip install "nemo_toolkit[asr,cu12] @ git+https://github.com/NVIDIA/NeMo.git@$NemoGitRef" "numba>=0.60" "llvmlite>=0.43" "cuda-bindings<13" --python $PythonExe
+            Invoke-Native $Uv pip install "nemo_toolkit[asr,cu12] @ git+https://github.com/NVIDIA/NeMo.git@$NemoGitRef" "numba==0.65.1" "llvmlite==0.47.0" "cuda-bindings<13" --python $PythonExe
         } else {
-            Invoke-Native $Uv pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@$NemoGitRef" "numba>=0.60" "llvmlite>=0.43" --python $PythonExe
+            Invoke-Native $Uv pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@$NemoGitRef" "numba==0.65.1" "llvmlite==0.47.0" --python $PythonExe
         }
     }
 }

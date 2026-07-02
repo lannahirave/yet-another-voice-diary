@@ -71,10 +71,10 @@ if !errorlevel! neq 0 (
 
 if defined NEMO_CUDA_EXTRA (
     echo Installing NeMo from GitHub with [asr,!NEMO_CUDA_EXTRA!] extras...
-    uv pip install "nemo_toolkit[asr,!NEMO_CUDA_EXTRA!] @ git+https://github.com/NVIDIA/NeMo.git@7ccc79b525f205c2c20595a7dfc927051610962c" "numba>=0.60" "llvmlite>=0.43" "cuda-bindings<13" --python .venv-ml\Scripts\python.exe
+    uv pip install "nemo_toolkit[asr,!NEMO_CUDA_EXTRA!] @ git+https://github.com/NVIDIA/NeMo.git@7ccc79b525f205c2c20595a7dfc927051610962c" "numba==0.65.1" "llvmlite==0.47.0" "cuda-bindings<13" --python .venv-ml\Scripts\python.exe
 ) else (
     echo Installing NeMo from GitHub with [asr] extras CPU-only...
-    uv pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@7ccc79b525f205c2c20595a7dfc927051610962c" "numba>=0.60" "llvmlite>=0.43" --python .venv-ml\Scripts\python.exe
+    uv pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@7ccc79b525f205c2c20595a7dfc927051610962c" "numba==0.65.1" "llvmlite==0.47.0" --python .venv-ml\Scripts\python.exe
 )
 
 if !errorlevel! neq 0 (

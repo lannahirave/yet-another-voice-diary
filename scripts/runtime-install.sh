@@ -142,9 +142,9 @@ install_nemo() {
     log "[runtime-install] NeMo git ref=$NEMO_GIT_REF"
     "$UV_BIN" pip install cython packaging --python "$PYTHON_EXE"
     if [[ -n "${CUDA_INDEX:-}" ]]; then
-        "$UV_BIN" pip install "nemo_toolkit[asr,cu12] @ git+https://github.com/NVIDIA/NeMo.git@$NEMO_GIT_REF" "numba>=0.60" "llvmlite>=0.43" "cuda-bindings<13" --python "$PYTHON_EXE"
+        "$UV_BIN" pip install "nemo_toolkit[asr,cu12] @ git+https://github.com/NVIDIA/NeMo.git@$NEMO_GIT_REF" "numba==0.65.1" "llvmlite==0.47.0" "cuda-bindings<13" --python "$PYTHON_EXE"
     else
-        "$UV_BIN" pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@$NEMO_GIT_REF" "numba>=0.60" "llvmlite>=0.43" --python "$PYTHON_EXE"
+        "$UV_BIN" pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@$NEMO_GIT_REF" "numba==0.65.1" "llvmlite==0.47.0" --python "$PYTHON_EXE"
     fi
 }
 
