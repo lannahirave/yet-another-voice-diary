@@ -118,6 +118,13 @@ describe('Settings', () => {
     expect(screen.queryByTestId('threshold-slider')).toBeNull()
   })
 
+  it('does not render disabled WavLM embedding option', async () => {
+    renderSettings()
+
+    expect(await screen.findByTestId('model-card-embedding-ecapa')).toBeDefined()
+    expect(screen.queryByTestId('model-card-embedding-wavlm')).toBeNull()
+  })
+
   it('renders ITN map selector and saves selected valid maps', async () => {
     renderSettings()
 

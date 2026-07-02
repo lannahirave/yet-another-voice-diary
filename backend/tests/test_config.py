@@ -48,6 +48,12 @@ def test_invalid_diarization_model_id_normalizes_to_pyannote():
     assert providers.diarization_model_id == "pyannote"
 
 
+def test_invalid_embedding_model_id_normalizes_to_ecapa():
+    providers = ProviderConfig(embedding_model_id="wavlm")
+
+    assert providers.embedding_model_id == "ecapa"
+
+
 def test_sortformer_diarization_model_id_is_preserved():
     providers = ProviderConfig(diarization_model_id="sortformer-v2.1")
 
@@ -86,3 +92,35 @@ def test_load_rewrites_legacy_invalid_diarization_model_id(tmp_path):
     assert loaded.pipeline.itn_enabled is True
     assert loaded.pipeline.itn_selected_maps is None
     assert '"diarization_model_id": "pyannote"' in path.read_text(encoding="utf-8")
+
+
+def test_load_rewrites_legacy_invalid_embedding_model_id(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(
+        """
+{
+  "database": {"path": "backend/voice_diary.db", "echo": false},
+  "pipeline": {
+    "vad_threshold": 0.5,
+    "vad_min_silence_ms": 500,
+    "vad_speech_pad_ms": 200,
+    "vad_min_utterance_ms": 300,
+    "vad_max_utterance_ms": 30000,
+    "speaker_identification_threshold": 0.5,
+    "chunk_duration_ms": 100,
+    "unload_models_after_stop": false
+  },
+  "providers": {
+    "asr_model_id": "large-v3-turbo",
+    "diarization_model_id": "pyannote",
+    "embedding_model_id": "wavlm"
+  }
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    loaded = BackendConfig.load(path)
+
+    assert loaded.providers.embedding_model_id == "ecapa"
+    assert '"embedding_model_id": "ecapa"' in path.read_text(encoding="utf-8")

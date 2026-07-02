@@ -5,7 +5,12 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
-from ...config import SUPPORTED_DIARIZATION_MODEL_IDS, normalize_diarization_model_id
+from ...config import (
+    SUPPORTED_DIARIZATION_MODEL_IDS,
+    SUPPORTED_EMBEDDING_MODEL_IDS,
+    normalize_diarization_model_id,
+    normalize_embedding_model_id,
+)
 from ...providers.asr import WhisperASRProvider
 from ...providers.diarization import create_diarization_provider
 from ...providers.elevenlabs import ElevenLabsASRProvider
@@ -253,6 +258,17 @@ def select_provider(kind: str, payload: ProviderSelect, request: Request):
                 status_code=400,
                 detail=(
                     f"unsupported diarization model_id: {payload.model_id}. "
+                    f"Supported: {allowed}"
+                ),
+            )
+    if kind == "embedding":
+        normalized = normalize_embedding_model_id(payload.model_id)
+        if normalized != payload.model_id:
+            allowed = ", ".join(sorted(SUPPORTED_EMBEDDING_MODEL_IDS))
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"unsupported embedding model_id: {payload.model_id}. "
                     f"Supported: {allowed}"
                 ),
             )

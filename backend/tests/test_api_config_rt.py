@@ -82,3 +82,13 @@ async def test_pipeline_config_rejects_negative_min_utterance_filter(client):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "vad_min_utterance_ms must be a positive integer"
+
+
+async def test_provider_select_rejects_unsupported_embedding_model(client):
+    response = await client.post(
+        "/config/provider/embedding",
+        json={"model_id": "wavlm"},
+    )
+
+    assert response.status_code == 400
+    assert "unsupported embedding model_id: wavlm" in response.json()["detail"]

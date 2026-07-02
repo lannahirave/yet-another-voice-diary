@@ -26,10 +26,15 @@ def _resolve_device(device: str) -> str:
 SUPPORTED_DIARIZATION_MODEL_IDS = frozenset(
     {"pyannote", "pyannote-3.1", "sortformer-v2.1"}
 )
+SUPPORTED_EMBEDDING_MODEL_IDS = frozenset({"ecapa", "ecapa-tdnn"})
 
 
 def normalize_diarization_model_id(model_id: str) -> str:
     return model_id if model_id in SUPPORTED_DIARIZATION_MODEL_IDS else "pyannote"
+
+
+def normalize_embedding_model_id(model_id: str) -> str:
+    return model_id if model_id in SUPPORTED_EMBEDDING_MODEL_IDS else "ecapa"
 
 
 @dataclass
@@ -195,6 +200,9 @@ class ProviderConfig:
         self.diarization_model_id = normalize_diarization_model_id(
             self.diarization_model_id
         )
+        self.embedding_model_id = normalize_embedding_model_id(
+            self.embedding_model_id
+        )
 
 
 @dataclass
@@ -251,7 +259,15 @@ class BackendConfig:
             if isinstance(raw.get("providers", {}), dict)
             else None
         )
-        if raw_diarization_model_id != config.providers.diarization_model_id:
+        raw_embedding_model_id = (
+            raw.get("providers", {}).get("embedding_model_id")
+            if isinstance(raw.get("providers", {}), dict)
+            else None
+        )
+        if (
+            raw_diarization_model_id != config.providers.diarization_model_id
+            or raw_embedding_model_id != config.providers.embedding_model_id
+        ):
             config.save(source)
         return config
 

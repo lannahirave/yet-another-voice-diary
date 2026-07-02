@@ -117,13 +117,14 @@ const EMBED_MODELS: ModelDef[] = [
     speed: '',
     quality: 'settings.qualityRecommendedM',
   },
-  {
-    id: 'wavlm',
-    name: 'WavLM Large',
-    size: '~1.3 GB',
-    speed: '',
-    quality: 'settings.qualityAccurate',
-  },
+  // WavLM is intentionally disabled until a dedicated backend provider exists.
+  // {
+  //   id: 'wavlm',
+  //   name: 'WavLM Large',
+  //   size: '~1.3 GB',
+  //   speed: '',
+  //   quality: 'settings.qualityAccurate',
+  // },
 ]
 
 const DIAR_MODELS: ModelDef[] = [
