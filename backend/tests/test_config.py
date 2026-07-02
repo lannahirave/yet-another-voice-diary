@@ -49,7 +49,7 @@ def test_invalid_diarization_model_id_normalizes_to_pyannote():
 
 
 def test_invalid_embedding_model_id_normalizes_to_ecapa():
-    providers = ProviderConfig(embedding_model_id="wavlm")
+    providers = ProviderConfig(embedding_model_id="unsupported-embedding")
 
     assert providers.embedding_model_id == "ecapa"
 
@@ -113,7 +113,7 @@ def test_load_rewrites_legacy_invalid_embedding_model_id(tmp_path):
   "providers": {
     "asr_model_id": "large-v3-turbo",
     "diarization_model_id": "pyannote",
-    "embedding_model_id": "wavlm"
+    "embedding_model_id": "unsupported-embedding"
   }
 }
 """.strip(),

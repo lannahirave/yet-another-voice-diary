@@ -87,8 +87,8 @@ async def test_pipeline_config_rejects_negative_min_utterance_filter(client):
 async def test_provider_select_rejects_unsupported_embedding_model(client):
     response = await client.post(
         "/config/provider/embedding",
-        json={"model_id": "wavlm"},
+        json={"model_id": "unsupported-embedding"},
     )
 
     assert response.status_code == 400
-    assert "unsupported embedding model_id: wavlm" in response.json()["detail"]
+    assert "unsupported embedding model_id: unsupported-embedding" in response.json()["detail"]

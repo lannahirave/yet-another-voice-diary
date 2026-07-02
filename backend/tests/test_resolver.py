@@ -270,7 +270,7 @@ def test_resolve_filters_profiles_by_embedding_model_id(db: Database):
     )
     db.execute(
         "INSERT INTO contacts (id, name, created_at) VALUES (?, ?, ?)",
-        ("wavlm_contact", "WavLM", 1),
+        ("other_embedding_contact", "Other Embedding", 1),
     )
     db.execute(
         """
@@ -286,7 +286,15 @@ def test_resolve_filters_profiles_by_embedding_model_id(db: Database):
             (id, contact_id, embedding, model_id, embedding_dim, quality_score, recorded_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        ("wavlm_profile", "wavlm_contact", emb.tobytes(), "wavlm", 3, 0.9, 1),
+        (
+            "other_embedding_profile",
+            "other_embedding_contact",
+            emb.tobytes(),
+            "other-embedding",
+            3,
+            0.9,
+            1,
+        ),
     )
 
     segment = SpeakerSegment(embedding=emb.copy(), source="mic")
@@ -329,7 +337,7 @@ def test_resolve_filters_profiles_by_embedding_dimension(db: Database):
 
 
 def test_get_candidates_falls_back_to_same_dim_profiles_from_other_models(db: Database):
-    resolver = SpeakerResolver(db, embedding_model_id="wavlm")
+    resolver = SpeakerResolver(db, embedding_model_id="other-embedding")
 
     emb = np.array([1.0, 0.0, 0.0], dtype=np.float32)
     db.execute(

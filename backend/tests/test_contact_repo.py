@@ -142,7 +142,7 @@ def test_confidence_ignores_profiles_from_incompatible_embedding_spaces(db: Data
             (id, contact_id, embedding, model_id, embedding_dim, quality_score, recorded_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        ("p2", "c1", np.array([1.0, 0.0], dtype=np.float32).tobytes(), "wavlm", 2, 0.9, 1),
+        ("p2", "c1", np.array([1.0, 0.0], dtype=np.float32).tobytes(), "other-embedding", 2, 0.9, 1),
     )
     conn.execute(
         """
