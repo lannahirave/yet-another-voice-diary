@@ -1,6 +1,7 @@
 frontend/node_modules
 frontend/dist
 frontend/dist-app
+frontend/dist-app-archive
 frontend/dist-electron
 frontend/dist-types
 frontend/dist-types-node

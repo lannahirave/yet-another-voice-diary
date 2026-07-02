@@ -1,0 +1,146 @@
+name: Electron distribution
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - ".github/workflows/electron-distribution.yml"
+      - "backend/**"
+      - "frontend/**"
+      - "scripts/runtime-install.ps1"
+      - "scripts/runtime-install.sh"
+
+jobs:
+  build-installers:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: voice-diary-windows-installer
+            expected_extensions: '[".exe"]'
+            artifact_paths: |
+              frontend/dist-app/*.exe
+              frontend/dist-app/*.blockmap
+          - os: macos-latest
+            artifact_name: voice-diary-macos-dmg
+            expected_extensions: '[".dmg"]'
+            artifact_paths: |
+              frontend/dist-app/*.dmg
+              frontend/dist-app/*.blockmap
+          - os: ubuntu-latest
+            artifact_name: voice-diary-linux-installers
+            expected_extensions: '[".AppImage", ".deb"]'
+            artifact_paths: |
+              frontend/dist-app/*.AppImage
+              frontend/dist-app/*.deb
+              frontend/dist-app/*.blockmap
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            electron-${{ runner.os }}-
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Typecheck frontend
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Run frontend unit tests
+        working-directory: frontend
+        run: npm run test:unit
+
+      - name: Install Python test runner
+        run: python -m pip install pytest
+
+      - name: Run backend runtime/package invariants
+        run: python -m pytest backend/tests/test_runtime_installers.py -v
+
+      - name: Build installable Electron app
+        working-directory: frontend
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          ELECTRON_BUILDER_DISABLE_UPDATE_CHECK: "true"
+        run: npm run electron:build
+
+      - name: Verify installable artifacts
+        shell: node {0}
+        env:
+          EXPECTED_EXTENSIONS: ${{ matrix.expected_extensions }}
+        run: |
+          const fs = require('fs')
+          const path = require('path')
+
+          const distDir = path.join('frontend', 'dist-app')
+          const minBytes = 50 * 1024 * 1024
+          const expectedExtensions = JSON.parse(process.env.EXPECTED_EXTENSIONS)
+          const files = fs.readdirSync(distDir).map((name) => {
+            const fullPath = path.join(distDir, name)
+            return { name, fullPath, stat: fs.statSync(fullPath) }
+          })
+
+          for (const extension of expectedExtensions) {
+            const matches = files.filter((file) => (
+              file.stat.isFile() && file.name.endsWith(extension)
+            ))
+            if (matches.length === 0) {
+              throw new Error(`Missing installer artifact with extension ${extension}`)
+            }
+            for (const match of matches) {
+              if (match.stat.size < minBytes) {
+                throw new Error(
+                  `Installer artifact is unexpectedly small: ${match.fullPath} (${match.stat.size} bytes)`,
+                )
+              }
+            }
+          }
+
+      - name: Upload installable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_paths }}
+          if-no-files-found: error
+          retention-days: ${{ startsWith(github.ref, 'refs/tags/v') && 90 || 14 }}
+
+      - name: Upload builder diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: voice-diary-builder-diagnostics-${{ matrix.os }}
+          path: |
+            frontend/dist-app/builder-debug.yml
+            frontend/dist-app/*.yml
+            frontend/dist-app/*.yaml
+          if-no-files-found: ignore
+          retention-days: ${{ startsWith(github.ref, 'refs/tags/v') && 90 || 14 }}
