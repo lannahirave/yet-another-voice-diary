@@ -1,220 +1,166 @@
 # Voice Diary
 
-Desktop meeting recorder with automatic transcription and speaker identification.
-Built as an MS diploma project.
+Local-first desktop app for recording conversations, transcribing speech, and associating speakers with saved contacts over time.
 
-## Architecture
+Voice Diary captures microphone and optional system audio, streams it to a local Python backend, runs speech recognition and speaker processing, then stores sessions, transcripts, contacts, and unresolved speakers in SQLite.
 
-```
+## What It Does
+
+- Records microphone and optional system audio in an Electron desktop app.
+- Streams audio to a local FastAPI backend for real-time processing.
+- Transcribes speech with Whisper / faster-whisper.
+- Detects speech boundaries with Silero VAD.
+- Runs speaker diarization with PyAnnote or NVIDIA NeMo Sortformer.
+- Builds speaker embeddings with SpeechBrain ECAPA-TDNN.
+- Matches known speakers to saved contacts and queues unknown voices for review.
+- Supports transcript search, session history, contact management, and runtime model settings.
+- Packages as a desktop app with a self-installed Python backend runtime.
+
+## Tech Stack
+
+- **Desktop/UI:** Electron 41, React 19, TypeScript, Vite 8
+- **State/data:** TanStack Query v5, REST, WebSocket, i18next
+- **Backend:** Python, FastAPI, Uvicorn, Pydantic
+- **Storage:** SQLite, FTS5, idempotent migrations
+- **ML:** faster-whisper, Silero VAD, PyAnnote, NeMo Sortformer, SpeechBrain, PyTorch
+- **Tests:** Vitest, Testing Library, pytest, httpx
+- **Packaging:** electron-builder, bundled backend source, runtime installer scripts
+
+## Project Layout
+
+```text
 web_app/
-  ├── backend/   Python service, tests, model cache, dev DB, backend scripts
-  ├── frontend/  Vite/React/Electron desktop shell
-  ├── docs/      project notes and app-specific findings
-  └── .venv*/    local Python environments (machine-specific)
-
-Electron (Node 20, frontend/)
-  └─ spawns ──► Python 3.11 backend  (FastAPI + uvicorn on 127.0.0.1:8765)
-                  ├── SQLite (sessions, utterances, contacts, speaker_segments, FTS5)
-                  ├── Whisper Large-v3-Turbo  (ASR — faster-whisper, int8/CPU)
-                  ├── Silero VAD              (stub — Phase 5)
-                  └── ECAPA-TDNN embedding    (stub — Phase 5)
-   └─ loads ───► Vite / React 19 / TypeScript  (127.0.0.1:5173 in dev)
-                  ├── AudioContext → ScriptProcessorNode → PCM over WebSocket
-                  └── REST: /sessions /contacts /unknown-queue /search /config
+  backend/      FastAPI service, ML providers, pipeline, SQLite repositories, tests
+  frontend/     Electron + React app, API client, query hooks, UI components
+  scripts/      local install scripts and packaged-runtime bootstrap scripts
+  docs/         architecture notes and implementation findings
 ```
 
-## Directory ownership
+## How It Works
 
-- `backend/` owns Python source, backend tests, backend scripts, the dev SQLite file, and downloaded model artifacts.
-- `frontend/` owns the Node package, Vite config, Electron main-process code, and UI source.
-- `docs/` owns project notes, findings, and implementation history.
-- hidden root folders like `.venv-ml/`, `.run-logs/`, and `.playwright-mcp/` are disposable local runtime state, not product structure.
+```text
+Electron UI
+  -> captures mic/system audio
+  -> sends float32 PCM chunks over WebSocket
 
-## Phase status
+FastAPI backend
+  -> VAD endpointing
+  -> ASR transcription
+  -> diarization
+  -> speaker embedding
+  -> speaker/contact resolution
+  -> SQLite persistence + FTS search
+```
 
-| Phase | Feature | Status | Commit |
-|---|---|---|---|
-| 1 | Vite + React 18 + TS skeleton | ✅ Done | `18021e7` |
-| 2 | FastAPI + SQLite + Whisper Turbo | ✅ Done | `1f9db8e` |
-| 3 | Electron wrapper | ✅ Done | `35bfebb` |
-| 4 | Replace mocks with real API | ✅ Done | `35bfebb` |
-| 5 | Real VAD + speaker embedding + ID | 🟡 ASR done; VAD/embed stubs | — |
-| 6 | Settings persistence | ⬜ Pending | — |
-| 7 | Packaging (optional) | ⬜ Pending | — |
+In development, Electron starts the Python backend on `127.0.0.1:8765` and loads the Vite UI from `127.0.0.1:5173`.
 
 ## Requirements
 
 - Python 3.11+
-- Node 20+
+- Node.js 20+
+- npm
 - uv
-- ffmpeg on `PATH` for NeMo Sortformer diarization
-- (optional) CUDA-capable NVIDIA GPU for faster ASR/diarization
+- ffmpeg on `PATH` for NeMo Sortformer
+- Optional: NVIDIA GPU for CUDA acceleration
+- Optional: `HF_TOKEN` for gated Hugging Face diarization models
 
-## Quick start
+## Install
 
-The unified installer creates `.venv-ml`, installs backend ML/dev dependencies
-with `uv`, installs CUDA Torch wheels when NVIDIA CUDA is detected, installs
-NeMo Sortformer by default, installs frontend dependencies with `npm ci` when
-the lockfile exists, seeds the dev DB, and verifies imports.
-
-**Windows:**
+Windows:
 
 ```bat
 scripts\install.bat
-cd frontend && npm run electron:dev
 ```
 
-**Linux / macOS:**
+Linux / macOS:
 
 ```bash
 bash scripts/install.sh
-cd frontend && npm run electron:dev
 ```
 
-Useful installer modes (supported on both platforms):
+Useful installer flags:
+
+```bash
+--cpu             force CPU-only PyTorch
+--no-nemo         skip NeMo Sortformer
+--skip-frontend   skip npm install
+--skip-seed       accepted by scripts; currently no seed step runs
+```
+
+The installer creates `.venv-ml`, installs backend ML/dev dependencies, installs frontend dependencies, picks CPU/CUDA PyTorch wheels, and verifies imports.
+
+## Run In Development
+
+Full desktop app:
+
+```bash
+cd frontend
+npm run electron:dev
+```
+
+Backend only:
 
 ```bash
 # Windows
-scripts\install.bat --cpu --no-nemo --skip-frontend --skip-seed
-scripts\install-nemo.bat           # Add NeMo to an existing .venv-ml
-
-# Linux / macOS (--nemo flag for Mac, but default includes it)
-bash scripts/install.sh --cpu --no-nemo --skip-frontend --skip-seed
-```
-
-Options:
-- `--cpu` — Force CPU-only PyTorch even when NVIDIA CUDA is present
-- `--no-nemo` — Skip NeMo Sortformer dependencies
-- `--skip-frontend` — Skip npm dependency installation
-- `--skip-seed` — Skip dev DB seed
-
-Electron starts the backend through `frontend/electron/python-manager.ts`, which
-prefers `web_app/.venv-ml/Scripts/python.exe` (Windows) or
-`web_app/.venv-ml/bin/python` (Unix). If Sortformer fails with
-`ModuleNotFoundError: No module named 'nemo'`, the active `.venv-ml` does not
-have NeMo installed; rerun the installer.
-
-## CUDA-enabled PyTorch
-
-`backend/providers/asr.py` and `backend/providers/embedding.py` already switch to
-`cuda` automatically when `torch.cuda.is_available()` is true. The current blocker
-was the installed wheel, not the provider code.
-
-`benchmark_codemixing` confirmed that CUDA is available on this machine, but
-`web_app` must stay on the torch `2.8.0` line because `pyannote.audio==4.0.3`
-and the current SpeechBrain integration are not compatible with torch `2.11`.
-
-Use this CUDA-enabled stack in `web_app`:
-
-- `torch 2.8.0+cu126`
-- `torchaudio 2.8.0+cu126`
-- `torchvision 0.23.0+cu126`
-
-`web_app` had CPU-only Torch installs, so it stayed on CPU. To make `web_app` use
-CUDA, use the installer. It detects CUDA 12.x/13.x drivers and installs
-the PyTorch `cu126` wheels:
-
-```bash
-# Windows
-scripts\install.bat
-.venv-ml\Scripts\python.exe -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.version.cuda)"
+.venv-ml\Scripts\python.exe -m backend.run
 
 # Linux / macOS
-bash scripts/install.sh
-.venv-ml/bin/python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+.venv-ml/bin/python -m backend.run
 ```
 
-## API overview
-
-| Endpoint | Description |
-|---|---|
-| `GET /health` | Backend liveness |
-| `GET /sessions` | List recording sessions |
-| `POST /sessions` | Create session |
-| `GET /sessions/{id}/utterances` | Utterances for a session |
-| `GET /contacts` | List contacts (includes voiceprint `confidence`) |
-| `POST /contacts` | Create contact |
-| `GET /contacts/{id}` | Single contact (includes `confidence`) |
-| `PATCH /contacts/{id}` | Update name/notes |
-| `DELETE /contacts/{id}` | Delete contact |
-| `POST /contacts/{id}/merge` | Merge two contacts |
-| `GET /contacts/{id}/utterances` | All utterances attributed to this contact |
-| `GET /unknown-queue` | Unresolved speaker segments |
-| `POST /unknown-queue/{id}/resolve` | Assign segment to contact |
-| `GET /search?q=` | FTS5 full-text search |
-| `GET /config` | Current model/threshold config |
-| `WS /ws/audio?track=mic\|system` | Stream PCM → receive utterance events. The `track` param tags every emitted utterance/segment so mic and system-loopback streams stay separate end-to-end (resolver scopes voiceprints by source). Default `mic` keeps single-stream callers working. |
-
-## Key files
-
-| File | Role |
-|---|---|
-| `frontend/electron/main.ts` | Electron entry — spawns Python, opens window |
-| `frontend/electron/python-manager.ts` | Starts/stops Python backend subprocess |
-| `frontend/src/api/adapters.ts` | Maps API shapes → frontend domain types |
-| `frontend/src/api/websocket.ts` | `AudioWebSocket` + `downsampleTo16k` |
-| `frontend/src/query/client.ts` | TanStack React Query client (stale-while-revalidate) |
-| `backend/api/app.py` | FastAPI factory, CORS, DI |
-| `backend/api/routers/audio_ws.py` | PCM → ASR → utterance events |
-| `backend/providers/asr.py` | Whisper Large-v3-Turbo (CPU int8 / CUDA fp16) |
-| `backend/storage/session_repo.py` | Session + utterance CRUD |
-| `backend/scripts/score_histogram.py` | Diagnose identification — SAME vs DIFF cosine distributions, threshold suggestion |
-| `backend/scripts/clear_db.py` | Wipe user data, preserve schema (child-tables-first + FTS + VACUUM) |
-| `backend/scripts/verify_windows_install.py` | Post-install verification (Windows, CUDA, core imports, NeMo) |
-| `backend/scripts/verify_unix_install.py` | Post-install verification (Linux/macOS, CUDA/MPS, core imports, NeMo) |
-| `backend/identification/resolver.py` | `SpeakerResolver` (cosine match, dedupe by contact) |
-| `backend/storage/contact_repo.py` | Contact CRUD + voiceprint confidence (mean pairwise cosine) |
-| `docs/voice-recognition-review.md` | How embeddings are stored/compared, why matches fail, investigation log |
-| `docs/todo.md` | Full build plan with per-phase detail |
-
-## Running tests
+Frontend only:
 
 ```bash
-python -m pytest backend/tests/ -v       # 91 tests
-python -m pytest backend/e2e-tests/ -v   # real-model e2e (needs .venv-ml)
-cd frontend && npm run typecheck         # tsc --noEmit
-cd frontend && npm run test:unit         # 102 frontend tests
+cd frontend
+npm run dev
 ```
 
-## Diagnostics & maintenance scripts
+## Package Desktop App
 
 ```bash
-# Score-histogram: dump SAME vs DIFF cosine distributions for the data in
-# the DB, plus best-score-per-profile for every unresolved segment in the
-# unknown queue. Use this to pick speaker_identification_threshold from
-# real data instead of guessing.
-# Windows:
-.venv-ml\Scripts\python -m backend.scripts.score_histogram backend/voice_diary.db
-# Linux / macOS:
-.venv-ml/bin/python -m backend.scripts.score_histogram backend/voice_diary.db
-
-# Clear-DB: wipe all user rows from the dev SQLite DB while preserving
-# schema, indexes, and FTS shadow. Confirms before deleting unless --yes.
-# Windows:
-.venv-ml\Scripts\python -m backend.scripts.clear_db --yes
-# Linux / macOS:
-.venv-ml/bin/python -m backend.scripts.clear_db --yes
+cd frontend
+npm run electron:build
 ```
 
-## Voiceprint confidence
+`electron-builder` writes packaged output to `frontend/dist-app/`.
 
-`GET /contacts` and `GET /contacts/{id}` return a `confidence` field in
-`[0, 1]`: the mean pairwise cosine across the contact's voice profiles.
-Higher = the enrolled profiles are mutually consistent → reliable
-identification. Returns `0.0` when fewer than two profiles exist (the UI
-treats this as "voiceprint not yet computed", matching the disabled
-"Update profile" button).
+Packaged apps include backend source and runtime bootstrap scripts as `extraResources`. On first run, the app installs its Python backend runtime under Electron `userData/backend-runtime`, so it does not depend on the repo checkout or local `.venv*` folders.
 
-Identification threshold is exposed at runtime via `POST /config/threshold`
-(value in `[0, 1]`). For ECAPA on noisy single-mic audio, real same-speaker
-scores typically land in `0.55–0.85`. The historical default of `0.82` is
-too aggressive in practice — see
-`docs/voice-recognition-review.md` for the empirical calibration log.
+## Verify
 
-## Design
+Fast checks:
 
-Warm-cream palette (`#f2f1ed` background, `#f54e00` accent).
-Fonts: Lora (serif) + JetBrains Mono (monospace) via Google Fonts.
-The design spec (`uploads/DESIGN-cursor.md`) references CursorGothic / jjannon / berkeleyMono —
-unlicensed proprietary fonts. Drop them into `public/fonts/` and uncomment the `@font-face`
-block in `src/styles/tokens.css` to activate.
+```bash
+cd frontend
+npm run typecheck
+npm run test:unit
+```
+
+```bash
+# Windows
+.venv-ml\Scripts\python.exe -m pytest backend\tests\ -v
+
+# Linux / macOS
+.venv-ml/bin/python -m pytest backend/tests/ -v
+```
+
+Real-model e2e tests need ML dependencies and usually `HF_TOKEN`:
+
+```bash
+# Windows
+.venv-ml\Scripts\python.exe -m pytest backend\e2e-tests\ -v
+
+# Linux / macOS
+.venv-ml/bin/python -m pytest backend/e2e-tests/ -v
+```
+
+## Technical Highlights
+
+Voice Diary combines a desktop product shell with a local ML backend and several production-oriented constraints:
+
+- real-time audio streaming over WebSocket
+- graceful degradation when ASR, diarization, or embedding fails
+- source-scoped speaker identity for mic vs system audio
+- embedding-space metadata to avoid invalid voice-profile matches
+- background model lifecycle management with progress reporting
+- packaged runtime installation that does not depend on the source checkout or development virtualenvs
