@@ -80,8 +80,8 @@ jobs:
         working-directory: frontend
         run: npm run test:unit
 
-      - name: Install Python test runner
-        run: python -m pip install pytest
+      - name: Install backend test dependencies
+        run: python -m pip install -e "backend[dev]"
 
       - name: Run backend runtime/package invariants
         run: python -m pytest backend/tests/test_runtime_installers.py -v
