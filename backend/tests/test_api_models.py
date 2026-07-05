@@ -9,6 +9,8 @@ import pytest
 
 from backend.config import BackendConfig
 
+pytest_plugins = ("backend.tests.api_fixtures",)
+
 
 class FakeLoadProvider:
     def __init__(self) -> None:

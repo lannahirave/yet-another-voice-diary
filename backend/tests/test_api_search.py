@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import pytest
 
+pytest_plugins = ("backend.tests.api_fixtures",)
+
 
 @pytest.mark.asyncio
 async def test_fts_returns_seeded_rows(client):

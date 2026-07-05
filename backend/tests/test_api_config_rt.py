@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+pytest_plugins = ("backend.tests.api_fixtures",)
+
 
 async def test_pipeline_config_roundtrips_itn_enabled(client):
     response = await client.get("/config")
