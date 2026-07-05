@@ -2,16 +2,6 @@ name: Electron distribution
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
-  pull_request:
-    paths:
-      - ".github/workflows/electron-distribution.yml"
-      - "backend/**"
-      - "frontend/**"
-      - "scripts/runtime-install.ps1"
-      - "scripts/runtime-install.sh"
 
 jobs:
   build-installers:
