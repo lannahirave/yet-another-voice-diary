@@ -6,7 +6,13 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-import torch
+
+def _torch_device_probe() -> tuple[bool, bool]:
+    try:
+        import torch  # type: ignore[import-untyped]
+    except ModuleNotFoundError:
+        return False, False
+    return torch.cuda.is_available(), torch.backends.mps.is_available()
 
 
 def _resolve_device(device: str) -> str:
@@ -17,9 +23,10 @@ def _resolve_device(device: str) -> str:
     """
     if device != "auto":
         return device
-    if torch.cuda.is_available():
+    cuda_available, mps_available = _torch_device_probe()
+    if cuda_available:
         return "cuda"
-    if torch.backends.mps.is_available():
+    if mps_available:
         return "mps"
     return "cpu"
 

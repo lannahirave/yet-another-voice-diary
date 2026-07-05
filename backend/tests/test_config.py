@@ -1,7 +1,15 @@
 """Tests for configuration."""
+import builtins
 from pathlib import Path
+from typing import Any
 
-from backend.config import BackendConfig, DatabaseConfig, PipelineConfig, ProviderConfig
+from backend.config import (
+    BackendConfig,
+    DatabaseConfig,
+    PipelineConfig,
+    ProviderConfig,
+    _resolve_device,
+)
 
 
 def test_default_config():
@@ -20,6 +28,19 @@ def test_custom_config():
     config = BackendConfig(database=db_config, pipeline=pipeline_config)
 
     assert config.pipeline.vad_threshold == 0.6
+
+
+def test_auto_device_falls_back_to_cpu_when_torch_is_not_installed(monkeypatch: Any) -> None:
+    real_import = builtins.__import__
+
+    def import_without_torch(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "torch":
+            raise ModuleNotFoundError("No module named 'torch'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_torch)
+
+    assert _resolve_device("auto") == "cpu"
 
 
 def test_config_save_and_load(tmp_path):
