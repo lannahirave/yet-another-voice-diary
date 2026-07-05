@@ -3,7 +3,23 @@
 This file describes the project conventions, verification commands, and coding
 style that agents should follow when working on this codebase.
 
-## Verification commands (run after every code change)
+## Verification commands
+
+Run the smallest verification set that matches the files changed. Do **not** run
+frontend or backend test suites for documentation-only, workflow-only, metadata,
+or other changes that do not touch their code, dependencies, runtime scripts, or
+shared API contracts.
+
+Use this scope:
+- Frontend checks only when changes touch `frontend/**`, frontend dependencies,
+  Electron renderer/main/preload code, or frontend-facing API types/contracts.
+- Backend tests only when changes touch `backend/**`, backend dependencies,
+  runtime installer behavior, or backend-facing API contracts.
+- Runtime/packaging checks only when changes touch `scripts/runtime-install.*`,
+  Electron packaging configuration, packaged backend bootstrap, or related tests.
+- For docs, GitHub workflow trigger-only edits, comments, README/AGENTS changes,
+  or other non-runtime metadata, no frontend/backend tests are required unless
+  the change also affects one of the areas above.
 
 ```bash
 # Frontend typecheck (tsc --noEmit, must pass with zero errors)
@@ -23,11 +39,16 @@ D:\web_app\.venv-ml\Scripts\python.exe -m pytest D:\web_app\backend\e2e-tests\ -
 
 ## On commit
 
-After every commit, run:
-1. `npm run typecheck` in `frontend/`
-2. `pytest` in `backend/tests/`
+Before every commit, run only the verification commands required by the files
+being committed:
+1. If committing frontend-impacting changes, run `npm run typecheck` in
+   `frontend/` and relevant frontend tests.
+2. If committing backend-impacting changes, run `pytest` in `backend/tests/`
+   using `.venv` when present or `.venv-ml` as the fallback.
+3. If committing changes outside frontend/backend/runtime behavior, do not run
+   frontend or backend suites just to satisfy process.
 
-Never commit if either fails.
+Never commit if a required verification command for the changed scope fails.
 
 ## Project structure
 
