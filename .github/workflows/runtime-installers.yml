@@ -142,16 +142,24 @@ jobs:
             return matches
           }
 
-          const files = walk('dist-app').map((file) => file.replaceAll(path.sep, '/'))
-          const requiredSuffixes = [
-            '/resources/scripts/runtime-install.ps1',
-            '/resources/scripts/runtime-install.sh',
-            '/resources/backend/pyproject.toml',
+          const resourcePaths = walk('dist-app')
+            .map((file) => file.replaceAll(path.sep, '/'))
+            .flatMap((file) => {
+              const marker = file.includes('/Contents/Resources/')
+                ? '/Contents/Resources/'
+                : '/resources/'
+              const index = file.indexOf(marker)
+              return index === -1 ? [] : [file.slice(index + marker.length)]
+            })
+          const requiredResources = [
+            'scripts/runtime-install.ps1',
+            'scripts/runtime-install.sh',
+            'backend/pyproject.toml',
           ]
 
-          for (const suffix of requiredSuffixes) {
-            if (!files.some((file) => file.endsWith(suffix))) {
-              throw new Error(`Missing packaged resource: ${suffix}`)
+          for (const resource of requiredResources) {
+            if (!resourcePaths.includes(resource)) {
+              throw new Error(`Missing packaged resource: ${resource}`)
             }
           }
 
