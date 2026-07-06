@@ -57,7 +57,9 @@
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "build/icon.png",
+      "build/icon.ico"
     ],
     "extraResources": [
       {
@@ -89,6 +91,7 @@
       }
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": "nsis"
     },
     "mac": {
@@ -100,6 +103,10 @@
         "AppImage",
         "deb"
       ]
-    }
+    },
+    "nsis": {
+      "deleteAppDataOnUninstall": true
+    },
+    "icon": "build/icon.png"
   }
 }

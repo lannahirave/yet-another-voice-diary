@@ -1,4 +1,4 @@
-import { app, BrowserWindow, desktopCapturer, ipcMain, session, shell } from 'electron'
+﻿import { app, BrowserWindow, desktopCapturer, ipcMain, session, shell } from 'electron'
 import * as path from 'path'
 import { startPythonBackend, stopPythonBackend } from './python-manager'
 
@@ -6,6 +6,7 @@ const isDev = process.env.NODE_ENV === 'development'
 const BACKEND_PORT = 8765
 const FRONTEND_DIR = path.resolve(__dirname, '..')
 const WEB_APP_DIR = path.resolve(FRONTEND_DIR, '..')
+const APP_ICON = path.join(FRONTEND_DIR, 'build', 'icon.png')
 
 type BackendStartupStatus =
   | { state: 'starting'; port: number; error: null }
@@ -68,6 +69,7 @@ async function createWindow(): Promise<void> {
     height: 800,
     minWidth: 900,
     minHeight: 600,
+    icon: APP_ICON,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -111,3 +113,4 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
+
