@@ -1,6 +1,12 @@
 {
   "name": "voice-diary",
   "version": "0.1.0",
+  "description": "Voice Diary desktop application",
+  "author": {
+    "name": "Voice Diary",
+    "email": "nikitinrus404@gmail.com"
+  },
+  "homepage": "https://github.com/lannahirave/yet-another-voice-diary",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.js",
@@ -89,6 +95,7 @@
       "target": "dmg"
     },
     "linux": {
+      "maintainer": "Voice Diary <nikitinrus404@gmail.com>",
       "target": [
         "AppImage",
         "deb"
