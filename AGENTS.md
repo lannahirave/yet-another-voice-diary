@@ -50,6 +50,13 @@ being committed:
 
 Never commit if a required verification command for the changed scope fails.
 
+### GitHub commit titles
+- Use Conventional Commits: `<type>(<scope>): <imperative summary>`.
+- Use `feat`, `fix`, `docs`, `ci`, `test`, `refactor`, `perf`, `build`, or `chore`.
+- Keep summaries concise, specific, lowercase after the colon, and without a period.
+- Keep one logical change per commit; use `!` for breaking changes.
+- Examples: `feat(packaging): allow Windows install directory selection`, `fix(ci): install backend test dependencies`.
+
 ## Project structure
 
 ```
