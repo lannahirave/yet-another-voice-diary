@@ -16,6 +16,9 @@ def test_default_config():
     assert config.pipeline is not None
     assert config.pipeline.speaker_identification_threshold == 0.5
     assert config.pipeline.vad_min_utterance_ms == 100
+    assert config.pipeline.vad_max_utterance_ms == 8_000
+    assert config.pipeline.blocklist_enabled is True
+    assert config.providers.preload_on_start is True
 
 
 def test_custom_config():

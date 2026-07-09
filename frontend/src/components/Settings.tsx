@@ -398,7 +398,7 @@ export function Settings() {
   const [vadPadPre, setVadPadPre] = useState(300)
   const [vadPadPost, setVadPadPost] = useState(400)
   const [vadMinUtt, setVadMinUtt] = useState(100)
-  const [vadMaxUtt, setVadMaxUtt] = useState(13_000)
+  const [vadMaxUtt, setVadMaxUtt] = useState(8_000)
   const [savingPipeline, setSavingPipeline] = useState(false)
 
   // ASR quality gate local state
@@ -620,8 +620,8 @@ export function Settings() {
 
   const thresholdControlsDisabled = loadingConfig || !config || savingThreshold
   const unloadAfterStop = config?.unload_models_after_stop ?? false
-  const preloadOnStart = config?.preload_on_start ?? false
-  const blocklistEnabled = config?.blocklist_enabled ?? false
+  const preloadOnStart = config?.preload_on_start ?? true
+  const blocklistEnabled = config?.blocklist_enabled ?? true
   const storage = storageQuery.data ?? null
 
   const renderModelCards = (

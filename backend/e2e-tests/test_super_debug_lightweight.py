@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.api.app import create_app
-from backend.config import BackendConfig, DatabaseConfig, PipelineConfig
+from backend.config import BackendConfig, DatabaseConfig, PipelineConfig, ProviderConfig
 from backend.models import Utterance
 from backend.pipeline.coordinator import PipelineCoordinator
 from backend.providers.vad import SpeechSegment
@@ -121,6 +121,7 @@ def debug_client(tmp_path: Path) -> TestClient:
     cfg = BackendConfig(
         database=DatabaseConfig(path=tmp_path / "debug-e2e.db"),
         pipeline=PipelineConfig(vad_min_utterance_ms=50),
+        providers=ProviderConfig(preload_on_start=False),
     )
     app = create_app(cfg)
 

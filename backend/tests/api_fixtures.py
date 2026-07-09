@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from backend.api.app import create_app
-from backend.config import BackendConfig, DatabaseConfig, PipelineConfig
+from backend.config import BackendConfig, DatabaseConfig, PipelineConfig, ProviderConfig
 
 
 @pytest.fixture()
@@ -20,6 +20,7 @@ def app() -> Iterator[FastAPI]:
         cfg = BackendConfig(
             database=DatabaseConfig(path=Path(tmpdir) / "test.db"),
             pipeline=PipelineConfig(),
+            providers=ProviderConfig(preload_on_start=False),
         )
         yield create_app(cfg)
 

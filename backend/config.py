@@ -110,12 +110,13 @@ class PipelineConfig:
     the unknown queue or the voice-profile gallery.
     """
 
-    vad_max_utterance_ms: int = 13_000
+    vad_max_utterance_ms: int = 8_000
     """Hard cap on continuous speech before forcing a flush.
 
-    Capped at 13 s because PyAnnote diarization accuracy degrades
-    on multi-speaker segments longer than ~15 s.  The speaker remains voiced
-    after a forced flush; the next chunk continues buffering a fresh utterance.
+    Defaults to 8 s to bound memory and ASR latency while keeping diarization
+    segments comfortably below the range where PyAnnote accuracy degrades.
+    The speaker remains voiced after a forced flush; the next chunk continues
+    buffering a fresh utterance.
     """
 
     speaker_identification_threshold: float = 0.5
@@ -127,8 +128,8 @@ class PipelineConfig:
     Frees RAM but introduces a 3-10 s warm-up on the next session.
     """
 
-    blocklist_enabled: bool = False
-    """If true, drop Whisper hallucination transcripts (off by default)."""
+    blocklist_enabled: bool = True
+    """If true, drop known Whisper hallucination transcripts (on by default)."""
 
     itn_enabled: bool = True
     """If true, normalize mapped ASR transliterations into display terms."""
@@ -194,7 +195,7 @@ class ProviderConfig:
     vad_model_id: str = "silero"
     elevenlabs_api_token: str = ""
     device: str = "auto"
-    preload_on_start: bool = False
+    preload_on_start: bool = True
 
     def __post_init__(self) -> None:
         self.diarization_model_id = normalize_diarization_model_id(

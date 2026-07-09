@@ -189,10 +189,10 @@ class ConfigOut(BaseModel):
     speaker_identification_threshold: float
     chunk_duration_ms: int
     unload_models_after_stop: bool = False
-    preload_on_start: bool = False
+    preload_on_start: bool = True
     device: str = "auto"
     providers: list[ProviderStatus]
-    blocklist_enabled: bool = False
+    blocklist_enabled: bool = True
     itn_enabled: bool = True
     itn_maps: list[ITNMapOut] = Field(default_factory=list)
     itn_selected_maps: list[str] = Field(default_factory=list)
