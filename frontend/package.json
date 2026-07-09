@@ -105,6 +105,8 @@
       ]
     },
     "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": true
     },
     "icon": "build/icon.png"
