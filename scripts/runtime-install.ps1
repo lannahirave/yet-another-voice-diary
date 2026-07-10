@@ -219,9 +219,9 @@ try {
 
     Invoke-Step "Verifying backend runtime imports" {
         if ($env:VOICE_DIARY_WITH_NEMO -eq "0") {
-            Invoke-Native $pythonExe -c "import torch; import faster_whisper; import pyannote.audio; import silero_vad; import speechbrain; from backend.providers.devices import normalize_indexed_cuda_device; assert normalize_indexed_cuda_device('cpu') == 'cpu'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+            Invoke-Native $pythonExe -c "import torch; import faster_whisper; import pyannote.audio; import silero_vad; import fireredvad; import huggingface_hub; import speechbrain; from backend.providers.devices import normalize_indexed_cuda_device; assert normalize_indexed_cuda_device('cpu') == 'cpu'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
         } else {
-            Invoke-Native $pythonExe -c "import torch; import faster_whisper; import pyannote.audio; import silero_vad; import speechbrain; import nemo.collections.asr.models; from backend.providers.devices import normalize_indexed_cuda_device; assert normalize_indexed_cuda_device('cpu') == 'cpu'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+            Invoke-Native $pythonExe -c "import torch; import faster_whisper; import pyannote.audio; import silero_vad; import fireredvad; import huggingface_hub; import speechbrain; import nemo.collections.asr.models; from backend.providers.devices import normalize_indexed_cuda_device; assert normalize_indexed_cuda_device('cpu') == 'cpu'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
         }
     }
 

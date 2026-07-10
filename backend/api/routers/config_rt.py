@@ -8,8 +8,10 @@ from fastapi import APIRouter, HTTPException, Request
 from ...config import (
     SUPPORTED_DIARIZATION_MODEL_IDS,
     SUPPORTED_EMBEDDING_MODEL_IDS,
+    SUPPORTED_VAD_MODEL_IDS,
     normalize_diarization_model_id,
     normalize_embedding_model_id,
+    normalize_vad_model_id,
 )
 from ...providers.asr import WhisperASRProvider
 from ...providers.diarization import create_diarization_provider
@@ -20,6 +22,7 @@ from ...providers.itn import (
     resolve_selected_itn_maps,
     validate_selected_itn_maps,
 )
+from ...providers.vad import create_vad_provider
 from ..schemas import (
     BlocklistUpdate,
     ConfigOut,
@@ -272,6 +275,17 @@ def select_provider(kind: str, payload: ProviderSelect, request: Request):
                     f"Supported: {allowed}"
                 ),
             )
+    if kind == "vad":
+        normalized = normalize_vad_model_id(payload.model_id)
+        if normalized != payload.model_id:
+            allowed = ", ".join(sorted(SUPPORTED_VAD_MODEL_IDS))
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"unsupported vad model_id: {payload.model_id}. "
+                    f"Supported: {allowed}"
+                ),
+            )
     provider = providers[kind]
     if kind == "diarization":
         if hasattr(provider, "unload"):
@@ -283,6 +297,21 @@ def select_provider(kind: str, payload: ProviderSelect, request: Request):
         coordinator = getattr(request.app.state, "coordinator", None)
         if coordinator is not None:
             coordinator.diarization = provider
+    elif kind == "vad":
+        if hasattr(provider, "unload"):
+            provider.unload()
+        pipeline = config.pipeline
+        provider = create_vad_provider(
+            payload.model_id,
+            threshold=pipeline.vad_threshold,
+            negative_threshold=pipeline.vad_negative_threshold,
+            min_silence_ms=pipeline.vad_min_silence_ms,
+            speech_pad_pre_ms=pipeline.vad_speech_pad_pre_ms,
+            speech_pad_post_ms=pipeline.vad_speech_pad_post_ms,
+            min_utterance_ms=pipeline.vad_min_utterance_ms,
+            max_utterance_ms=pipeline.vad_max_utterance_ms,
+        )
+        providers[kind] = provider
     elif kind == "asr" and (
         payload.model_id == "elevenlabs-scribe"
         or config.providers.asr_model_id == "elevenlabs-scribe"
@@ -307,6 +336,8 @@ def select_provider(kind: str, payload: ProviderSelect, request: Request):
         config.providers.embedding_model_id = payload.model_id
     elif kind == "diarization":
         config.providers.diarization_model_id = payload.model_id
+    elif kind == "vad":
+        config.providers.vad_model_id = payload.model_id
     if hasattr(provider, "unload"):
         provider.unload()
     else:

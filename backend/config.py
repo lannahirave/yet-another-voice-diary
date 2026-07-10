@@ -27,6 +27,7 @@ SUPPORTED_DIARIZATION_MODEL_IDS = frozenset(
     {"pyannote", "pyannote-3.1", "sortformer-v2.1"}
 )
 SUPPORTED_EMBEDDING_MODEL_IDS = frozenset({"ecapa", "ecapa-tdnn"})
+SUPPORTED_VAD_MODEL_IDS = frozenset({"silero", "firered-stream-vad"})
 
 
 def normalize_diarization_model_id(model_id: str) -> str:
@@ -35,6 +36,10 @@ def normalize_diarization_model_id(model_id: str) -> str:
 
 def normalize_embedding_model_id(model_id: str) -> str:
     return model_id if model_id in SUPPORTED_EMBEDDING_MODEL_IDS else "ecapa"
+
+
+def normalize_vad_model_id(model_id: str) -> str:
+    return model_id if model_id in SUPPORTED_VAD_MODEL_IDS else "silero"
 
 
 @dataclass
@@ -204,6 +209,7 @@ class ProviderConfig:
         self.embedding_model_id = normalize_embedding_model_id(
             self.embedding_model_id
         )
+        self.vad_model_id = normalize_vad_model_id(self.vad_model_id)
 
 
 @dataclass
@@ -265,9 +271,15 @@ class BackendConfig:
             if isinstance(raw.get("providers", {}), dict)
             else None
         )
+        raw_vad_model_id = (
+            raw.get("providers", {}).get("vad_model_id")
+            if isinstance(raw.get("providers", {}), dict)
+            else None
+        )
         if (
             raw_diarization_model_id != config.providers.diarization_model_id
             or raw_embedding_model_id != config.providers.embedding_model_id
+            or raw_vad_model_id != config.providers.vad_model_id
         ):
             config.save(source)
         return config

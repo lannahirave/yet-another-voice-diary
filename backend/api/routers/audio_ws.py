@@ -293,6 +293,7 @@ async def stream(ws: WebSocket) -> None:
                             "asr_model_id": cfg.providers.asr_model_id,
                             "diarization_model_id": cfg.providers.diarization_model_id,
                             "embedding_model_id": cfg.providers.embedding_model_id,
+                            "vad_model_id": cfg.providers.vad_model_id,
                             "device": cfg.providers.device,
                             "vad_threshold": cfg.pipeline.vad_threshold,
                             "vad_min_silence_ms": cfg.pipeline.vad_min_silence_ms,

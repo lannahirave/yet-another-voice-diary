@@ -194,9 +194,9 @@ if ! {
 
     step "Verifying backend runtime imports"
     if [[ "${VOICE_DIARY_WITH_NEMO:-1}" = "0" ]]; then
-        "$PYTHON_EXE" -c "import torch; import faster_whisper; import pyannote.audio; import silero_vad; import speechbrain; from backend.providers.devices import normalize_indexed_cuda_device; assert normalize_indexed_cuda_device('cpu') == 'cpu'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+        "$PYTHON_EXE" -c "import torch; import faster_whisper; import pyannote.audio; import silero_vad; import fireredvad; import huggingface_hub; import speechbrain; from backend.providers.devices import normalize_indexed_cuda_device; assert normalize_indexed_cuda_device('cpu') == 'cpu'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
     else
-        "$PYTHON_EXE" -c "import torch; import faster_whisper; import pyannote.audio; import silero_vad; import speechbrain; import nemo.collections.asr.models; from backend.providers.devices import normalize_indexed_cuda_device; assert normalize_indexed_cuda_device('cpu') == 'cpu'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+        "$PYTHON_EXE" -c "import torch; import faster_whisper; import pyannote.audio; import silero_vad; import fireredvad; import huggingface_hub; import speechbrain; import nemo.collections.asr.models; from backend.providers.devices import normalize_indexed_cuda_device; assert normalize_indexed_cuda_device('cpu') == 'cpu'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
     fi
 }; then
     write_state "error" "unknown" "runtime bootstrap failed"

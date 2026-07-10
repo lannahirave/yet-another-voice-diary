@@ -101,6 +101,8 @@ def create_app(config: Optional[BackendConfig] = None) -> FastAPI:
         min_silence_ms=config.pipeline.vad_min_silence_ms,
         speech_pad_pre_ms=config.pipeline.vad_speech_pad_pre_ms,
         speech_pad_post_ms=config.pipeline.vad_speech_pad_post_ms,
+        min_utterance_ms=config.pipeline.vad_min_utterance_ms,
+        max_utterance_ms=config.pipeline.vad_max_utterance_ms,
     )
     coordinator = PipelineCoordinator(config.pipeline, asr, diarization, embedding)
 

@@ -142,6 +142,24 @@ class PipelineCoordinator:
                 if event != "error":
                     self._emit("error", {"code": "CALLBACK_FAILURE", "message": str(exc)})
 
+    def _consume_vad_errors(self) -> None:
+        pop_error = getattr(self.vad, "pop_error", None)
+        if not callable(pop_error):
+            return
+        while True:
+            message = pop_error()
+            if not message:
+                return
+            self._emit(
+                "error",
+                {
+                    "code": "VAD_FAILURE",
+                    "component": "vad",
+                    "message": str(message),
+                    "ms": self._session_elapsed_ms,
+                },
+            )
+
     @staticmethod
     def _cuda_memory_snapshot() -> dict[str, Any]:
         """Return current CUDA memory metrics in MiB when available."""
@@ -173,6 +191,7 @@ class PipelineCoordinator:
         self._last_draft_ms = 0
         self._chunk_count = 0
         self.vad.reset()
+        self._consume_vad_errors()
 
     def end_session(self) -> RecordingSession | None:
         """End the current session.
@@ -184,6 +203,7 @@ class PipelineCoordinator:
         session = self._current_session
         if session is not None:
             seg = self.vad.finalize()
+            self._consume_vad_errors()
             if seg is not None and seg.duration_ms >= self.config.vad_min_utterance_ms:
                 self._flush_speech_segment_sync(seg)
         self._current_session = None
@@ -581,6 +601,7 @@ class PipelineCoordinator:
         self._session_elapsed_ms = ended_ms
 
         result = self.vad.process(audio, sample_rate)
+        self._consume_vad_errors()
 
         # Periodic GC returns freed numpy memory to the OS every ~5 s.
         self._chunk_count += 1

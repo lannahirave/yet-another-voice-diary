@@ -261,9 +261,44 @@ class ScriptedVADProcessor:
     max_utterance_ms: int = 0
 
 
+class RecoveringVADProcessor(FakeVADProcessor):
+    def __init__(self) -> None:
+        super().__init__()
+        self._error: str | None = "recoverable VAD failure"
+
+    def pop_error(self) -> str | None:
+        error = self._error
+        self._error = None
+        return error
+
+
 # Lower the min utterance floor so unit tests focus on the VAD/coordinator
 # boundary, not the floor itself.
 _TEST_PIPELINE_CFG = dict(vad_threshold=0.5, vad_min_utterance_ms=5)
+
+
+def test_recoverable_vad_failure_is_emitted_without_stopping_pipeline() -> None:
+    coordinator = PipelineCoordinator(
+        PipelineConfig(**_TEST_PIPELINE_CFG),
+        FakeASRProvider(),
+        FakeDiarizationProvider(),
+        FakeEmbeddingProvider(),
+        vad_processor=RecoveringVADProcessor(),
+    )
+    errors: list[dict] = []
+    coordinator.on("error", errors.append)
+
+    coordinator.start_session(RecordingSession(id="sess-vad-recovery"))
+    asyncio.run(coordinator.process_chunk(np.ones(160, dtype=np.float32), 16_000))
+
+    assert errors == [
+        {
+            "code": "VAD_FAILURE",
+            "component": "vad",
+            "message": "recoverable VAD failure",
+            "ms": 0,
+        }
+    ]
 
 
 def test_process_chunk_buffers_until_silence_boundary() -> None:

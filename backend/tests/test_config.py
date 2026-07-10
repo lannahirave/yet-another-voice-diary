@@ -68,6 +68,23 @@ def test_sortformer_diarization_model_id_is_preserved():
     assert providers.diarization_model_id == "sortformer-v2.1"
 
 
+def test_firered_vad_model_id_roundtrips_through_json(tmp_path):
+    config = BackendConfig.default()
+    config.providers.vad_model_id = "firered-stream-vad"
+    path = tmp_path / "config.json"
+
+    config.save(path)
+    loaded = BackendConfig.load(path)
+
+    assert loaded.providers.vad_model_id == "firered-stream-vad"
+
+
+def test_invalid_vad_model_id_normalizes_to_silero():
+    providers = ProviderConfig(vad_model_id="legacy-unknown-vad")
+
+    assert providers.vad_model_id == "silero"
+
+
 def test_load_rewrites_legacy_invalid_diarization_model_id(tmp_path):
     path = tmp_path / "config.json"
     path.write_text(

@@ -94,3 +94,41 @@ async def test_provider_select_rejects_unsupported_embedding_model(client):
 
     assert response.status_code == 400
     assert "unsupported embedding model_id: unsupported-embedding" in response.json()["detail"]
+
+
+async def test_provider_select_rejects_unsupported_vad_model(client):
+    response = await client.post(
+        "/config/provider/vad",
+        json={"model_id": "unsupported-vad"},
+    )
+
+    assert response.status_code == 400
+    assert "unsupported vad model_id: unsupported-vad" in response.json()["detail"]
+
+
+async def test_provider_select_reconstructs_and_persists_firered_vad(
+    client, app, monkeypatch, tmp_path
+):
+    from backend.config import BackendConfig
+    from backend.providers.vad import FireRedVADProvider
+
+    monkeypatch.setattr(
+        BackendConfig,
+        "default_path",
+        staticmethod(lambda: tmp_path / "config.json"),
+    )
+    previous = app.state.providers["vad"]
+
+    response = await client.post(
+        "/config/provider/vad",
+        json={"model_id": "firered-stream-vad"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["vad_model_id"] == "firered-stream-vad"
+    assert isinstance(app.state.providers["vad"], FireRedVADProvider)
+    assert app.state.providers["vad"] is not previous
+    assert app.state.providers["vad"]._state == "UNLOADED"
+    assert BackendConfig.load(tmp_path / "config.json").providers.vad_model_id == (
+        "firered-stream-vad"
+    )

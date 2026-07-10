@@ -173,6 +173,23 @@ const sectionsBase: Array<{ id: SectionId; labelKey: string }> = [
   { id: 'appearance', labelKey: 'settings.tabAppearance' },
 ]
 
+const VAD_MODELS: ModelDef[] = [
+  {
+    id: 'silero',
+    name: 'Silero VAD',
+    size: '~2.2 MB',
+    speed: '',
+    quality: 'settings.qualityRecommended',
+  },
+  {
+    id: 'firered-stream-vad',
+    name: 'FireRedVAD Stream',
+    size: '~2.3 MB',
+    speed: '',
+    quality: 'settings.qualityAlternative',
+  },
+]
+
 function formatBytes(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -466,14 +483,18 @@ export function Settings() {
   const asrProvider = providers.asr
   const embeddingProvider = providers.embedding
   const diarizationProvider = providers.diarization
+  const vadProvider = providers.vad
 
   const asrModels = withCurrentFallback(ASR_MODELS, asrProvider)
   const embeddingModels = withCurrentFallback(EMBED_MODELS, embeddingProvider)
   const diarizationModels = withCurrentFallback(DIAR_MODELS, diarizationProvider)
+  const vadModels = withCurrentFallback(VAD_MODELS, vadProvider)
 
   const selectedAsrModel = asrProvider?.model_id ?? 'large-v3-turbo'
   const selectedEmbeddingModel = embeddingProvider?.model_id ?? 'ecapa'
   const selectedDiarizationModel = diarizationProvider?.model_id ?? 'pyannote'
+  const selectedVadModel = config?.vad_model_id ?? vadProvider?.model_id ?? 'silero'
+  const fireRedVadSelected = selectedVadModel === 'firered-stream-vad'
   const itnMapOptions = useMemo<MultiSelectOption[]>(
     () =>
       (config?.itn_maps ?? []).map((map) => ({
@@ -812,7 +833,12 @@ export function Settings() {
 
         {active === 'speech' && (
           <>
-            <SectionTitle>{t('settings.pipelineSection')}</SectionTitle>
+            <SectionTitle>{t('settings.vadModelsSection')}</SectionTitle>
+            <div style={stS.modelGrid}>
+              {renderModelCards('vad', vadModels, vadProvider, selectedVadModel)}
+            </div>
+
+            <SectionTitle mt={28}>{t('settings.pipelineSection')}</SectionTitle>
 
             <div style={stS.settingRow}>
               <div style={{ flex: 1 }}>
@@ -840,10 +866,11 @@ export function Settings() {
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input
+                  data-testid="vad-offset-threshold"
                   type="range"
                   min={1} max={100}
                   value={Math.round(vadOffset * 100)}
-                  disabled={savingPipeline}
+                  disabled={savingPipeline || fireRedVadSelected}
                   onChange={(e) => setVadOffset(Number(e.target.value) / 100)}
                   onPointerUp={() => commitPipeline({ vad_negative_threshold: vadOffset })}
                   style={{ width: 140, accentColor: 'var(--accent)' }}
@@ -851,6 +878,11 @@ export function Settings() {
                 <span style={stS.paramValue}>{vadOffset.toFixed(2)}</span>
               </div>
             </div>
+            {fireRedVadSelected && (
+              <div data-testid="firered-offset-hint" style={stS.inlineHint}>
+                {t('settings.vadOffsetFireRedDisabled')}
+              </div>
+            )}
 
             <Divider />
 

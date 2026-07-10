@@ -36,6 +36,8 @@ ml = [
   "transformers>=4.40,<5",
   "accelerate>=0.28",
   "silero-vad>=5.1",
+  "fireredvad==0.0.2",
+  "huggingface-hub>=0.34,<1",
   "torch==2.8.0",
   "torchaudio==2.8.0",
   "torchvision==0.23.0",

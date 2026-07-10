@@ -3,7 +3,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Settings } from './Settings'
 import type { ApiConfig } from '../types/api'
-import { setPipeline } from '../api/config'
+import { getConfig, selectProvider, setPipeline } from '../api/config'
+import { queryKeys } from '../query/keys'
 
 const baseConfig: ApiConfig = {
   vad_threshold: 0.6,
@@ -24,6 +25,7 @@ const baseConfig: ApiConfig = {
     { kind: 'asr', model_id: 'large-v3-turbo', state: 'UNLOADED', device: 'auto', error: null },
     { kind: 'embedding', model_id: 'ecapa', state: 'UNLOADED', device: 'auto', error: null },
     { kind: 'diarization', model_id: 'pyannote', state: 'UNLOADED', device: 'auto', error: null },
+    { kind: 'vad', model_id: 'silero', state: 'UNLOADED', device: 'cpu', error: null },
   ],
   blocklist_enabled: true,
   itn_enabled: true,
@@ -80,10 +82,14 @@ vi.mock('../api/contacts', () => ({
   })),
 }))
 
-function renderSettings() {
+function renderSettings(initialConfig: ApiConfig = baseConfig) {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    defaultOptions: {
+      queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
+      mutations: { retry: false },
+    },
   })
+  queryClient.setQueryData(queryKeys.config.current(), initialConfig)
   return render(
     <QueryClientProvider client={queryClient}>
       <Settings />
@@ -94,6 +100,13 @@ function renderSettings() {
 describe('Settings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    baseConfig.vad_model_id = 'silero'
+    const vad = baseConfig.providers.find((provider) => provider.kind === 'vad')
+    if (vad) {
+      vad.model_id = 'silero'
+      vad.state = 'UNLOADED'
+    }
+    vi.mocked(getConfig).mockResolvedValue(baseConfig)
   })
 
   it('renders domain tabs and places ITN under Transcription', async () => {
@@ -164,5 +177,56 @@ describe('Settings', () => {
     await waitFor(() => {
       expect(vi.mocked(setPipeline)).toHaveBeenCalledWith({ vad_min_utterance_ms: 1 })
     })
+  })
+
+  it('renders both VAD cards and selects FireRed through the provider endpoint', async () => {
+    renderSettings()
+    fireEvent.click(await screen.findByTestId('settings-tab-speech'))
+
+    expect(await screen.findByTestId('model-card-vad-silero')).toBeDefined()
+    const fireRedCard = screen.getByTestId('model-card-vad-firered-stream-vad')
+    expect(fireRedCard).toBeDefined()
+
+    fireEvent.click(fireRedCard)
+    await waitFor(() => {
+      expect(vi.mocked(selectProvider)).toHaveBeenCalledWith(
+        'vad',
+        'firered-stream-vad',
+      )
+    })
+  })
+
+  it('targets VAD lifecycle actions at the selected VAD provider', async () => {
+    renderSettings()
+    fireEvent.click(await screen.findByTestId('settings-tab-speech'))
+    const loadButton = await screen.findByTestId('load-vad')
+    expect(loadButton).toHaveProperty('disabled', false)
+    expect(screen.queryByTestId('load-asr')).toBeNull()
+  })
+
+  it('disables only the Silero offset threshold for FireRedVAD', async () => {
+    const fireRedConfig: ApiConfig = {
+      ...baseConfig,
+      vad_model_id: 'firered-stream-vad',
+      providers: baseConfig.providers.map((provider) =>
+        provider.kind === 'vad'
+          ? { ...provider, model_id: 'firered-stream-vad' }
+          : provider,
+      ),
+    }
+    vi.mocked(getConfig).mockResolvedValue(fireRedConfig)
+
+    renderSettings(fireRedConfig)
+    fireEvent.click(await screen.findByTestId('settings-tab-speech'))
+
+    expect(await screen.findByTestId('vad-offset-threshold')).toHaveProperty(
+      'disabled',
+      true,
+    )
+    expect(screen.getByTestId('firered-offset-hint')).toBeDefined()
+    expect(screen.getByTestId('vad-min-utterance-input')).toHaveProperty(
+      'disabled',
+      false,
+    )
   })
 })

@@ -69,6 +69,17 @@ def test_runtime_installers_use_known_good_nemo_numba_constraints() -> None:
         assert "llvmlite==0.47.0" in text
 
 
+def test_firered_vad_dependency_and_runtime_import_checks_are_pinned() -> None:
+    pyproject = _read("backend/pyproject.toml")
+    assert '"fireredvad==0.0.2"' in pyproject
+    assert '"huggingface-hub>=0.34,<1"' in pyproject
+
+    for path in ("scripts/runtime-install.ps1", "scripts/runtime-install.sh"):
+        text = _read(path)
+        assert "import fireredvad" in text
+        assert "import huggingface_hub" in text
+
+
 def test_cuda_nemo_installs_pin_cuda_bindings_to_match_cuda_python_12() -> None:
     checked_paths = [
         "scripts/install.bat",
