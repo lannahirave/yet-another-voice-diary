@@ -28,6 +28,7 @@ from .turns import TurnSlice, build_turn_slices, speaker_groups
 # SpeechBrain, PyAnnote are not designed for concurrent calls).
 _inference_pool = ThreadPoolExecutor(max_workers=1)
 _draft_pool = ThreadPoolExecutor(max_workers=1)
+_CUDA_CACHE_RELEASE_THRESHOLD_BYTES = 1024 ** 3
 
 
 log = logging.getLogger(__name__)
@@ -184,6 +185,37 @@ class PipelineCoordinator:
         except Exception as exc:
             return {"available": True, "error": str(exc)}
 
+    @staticmethod
+    def _reset_cuda_peak_memory_stats() -> None:
+        try:
+            import torch  # type: ignore[import-untyped]
+
+            if torch.cuda.is_available():
+                torch.cuda.reset_peak_memory_stats(torch.cuda.current_device())
+        except Exception:
+            log.debug("failed to reset CUDA peak memory statistics", exc_info=True)
+
+    @classmethod
+    def _release_excess_cuda_cache(
+        cls,
+    ) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        try:
+            import torch  # type: ignore[import-untyped]
+
+            if not torch.cuda.is_available():
+                return None
+            device_idx = torch.cuda.current_device()
+            allocated = int(torch.cuda.memory_allocated(device_idx))
+            reserved = int(torch.cuda.memory_reserved(device_idx))
+            if reserved - allocated <= _CUDA_CACHE_RELEASE_THRESHOLD_BYTES:
+                return None
+            before = cls._cuda_memory_snapshot()
+            torch.cuda.empty_cache()
+        except Exception:
+            log.debug("failed to release excess CUDA cache", exc_info=True)
+            return None
+        return before, cls._cuda_memory_snapshot()
+
     def start_session(self, session: RecordingSession) -> None:
         """Start a new recording session."""
         self._current_session = session
@@ -204,8 +236,9 @@ class PipelineCoordinator:
         if session is not None:
             seg = self.vad.finalize()
             self._consume_vad_errors()
-            if seg is not None and seg.duration_ms >= self.config.vad_min_utterance_ms:
-                self._flush_speech_segment_sync(seg)
+            if seg is not None:
+                for bounded in self._bounded_speech_segments(seg):
+                    self._flush_speech_segment_sync(bounded)
         self._current_session = None
         self._session_elapsed_ms = 0
         self._chunk_count = 0
@@ -280,6 +313,7 @@ class PipelineCoordinator:
                     DiarizationSegment(start=0.0, end=duration_s, speaker="speaker-self")
                 ]
         else:
+            self._reset_cuda_peak_memory_stats()
             _info(
                 "diarization started key=%s samples=%d duration_ms=%d cuda=%s",
                 processing_key,
@@ -311,6 +345,16 @@ class PipelineCoordinator:
                 errors.append(
                     {"code": "DIARIZATION_FAILURE", "component": "diarization", "message": str(exc)}
                 )
+            finally:
+                released = self._release_excess_cuda_cache()
+                if released is not None:
+                    before, after = released
+                    _info(
+                        "released excess CUDA cache after diarization key=%s before=%s after=%s",
+                        processing_key,
+                        before,
+                        after,
+                    )
 
         turn_t0 = time.perf_counter()
         turns = build_turn_slices(audio, sample_rate, started_ms, diarized_segments)
@@ -558,6 +602,55 @@ class PipelineCoordinator:
             return
         self._attach_and_emit(batch, seg.sample_rate)
 
+    def _bounded_speech_segments(self, seg: SpeechSegment) -> list[SpeechSegment]:
+        """Split provider output into exact sample-bounded inference segments."""
+        if seg.sample_rate <= 0 or self.config.vad_max_utterance_ms <= 0:
+            pieces = [seg]
+        else:
+            cap_samples = max(
+                1,
+                int(
+                    round(
+                        self.config.vad_max_utterance_ms
+                        * seg.sample_rate
+                        / 1000
+                    )
+                ),
+            )
+            if len(seg.audio) <= cap_samples:
+                pieces = [seg]
+            else:
+                pieces = []
+                for offset in range(0, len(seg.audio), cap_samples):
+                    audio = np.ascontiguousarray(
+                        seg.audio[offset:offset + cap_samples], dtype=np.float32
+                    ).copy()
+                    started_ms = seg.started_ms + int(
+                        round(offset * 1000 / seg.sample_rate)
+                    )
+                    duration_ms = int(round(len(audio) * 1000 / seg.sample_rate))
+                    pieces.append(
+                        SpeechSegment(
+                            audio=audio,
+                            sample_rate=seg.sample_rate,
+                            started_ms=started_ms,
+                            ended_ms=started_ms + duration_ms,
+                            duration_ms=duration_ms,
+                        )
+                    )
+                log.warning(
+                    "splitting overlong VAD segment source=%s original_duration_ms=%d pieces=%d max_utterance_ms=%d",
+                    self.source,
+                    seg.duration_ms,
+                    len(pieces),
+                    self.config.vad_max_utterance_ms,
+                )
+        return [
+            piece
+            for piece in pieces
+            if piece.duration_ms >= self.config.vad_min_utterance_ms
+        ]
+
     def _flush_speech_segment_sync(self, seg: SpeechSegment) -> None:
         """Synchronous flush: runs on the calling thread for end_session."""
         if not self._current_session:
@@ -614,7 +707,8 @@ class PipelineCoordinator:
             self._maybe_submit_draft(sample_rate)
             return
 
-        if result.duration_ms < self.config.vad_min_utterance_ms:
+        bounded_segments = self._bounded_speech_segments(result)
+        if not bounded_segments:
             log.debug(
                 "discarding sub-min utterance: %d ms < %d ms",
                 result.duration_ms,
@@ -622,7 +716,8 @@ class PipelineCoordinator:
             )
             return
 
-        await self._flush_speech_segment(result)
+        for bounded in bounded_segments:
+            await self._flush_speech_segment(bounded)
 
     @staticmethod
     def _chunk_duration(audio: np.ndarray, sample_rate: int) -> int:

@@ -174,6 +174,7 @@ def test_firered_forced_split_snapshot_finalize_and_reset() -> None:
         def detect_frame(self, frame: np.ndarray) -> _FrameResult:
             self.frames.append(frame.copy())
             index = len(self.frames)
+            self.postprocessor.hit_max_speech = index == 800
             if index == 1:
                 return _FrameResult(index, True, True, False, 1)
             if index == 800:
@@ -192,12 +193,114 @@ def test_firered_forced_split_snapshot_finalize_and_reset() -> None:
 
     segment = session.process(np.ones(64_240, dtype=np.float32), 16_000)
     assert segment is not None
-    assert 8_000 <= segment.duration_ms <= 8_020
-    assert session.finalize() is None
+    assert segment.duration_ms == 8_000
+    remainder = session.finalize()
+    assert remainder is not None
+    assert remainder.started_ms == segment.ended_ms
+    assert remainder.duration_ms == 15
 
     session.reset()
     assert session.snapshot() is None
     assert engine.reset_count == 2
+
+
+def test_firered_forced_silence_endpoint_bypasses_post_padding() -> None:
+    class _ForcedSilenceEngine(_FakeEngine):
+        def detect_frame(self, frame: np.ndarray) -> _FrameResult:
+            self.frames.append(frame.copy())
+            index = len(self.frames)
+            self.postprocessor.hit_max_speech = index == 3
+            return {
+                1: _FrameResult(1, True, True, False, 1),
+                3: _FrameResult(3, False, False, True, 1, 3),
+                4: _FrameResult(4, True, True, False, 4),
+                6: _FrameResult(6, False, False, True, 4, 6),
+            }.get(index, _FrameResult(index, index < 6))
+
+    provider = _provider(
+        max_utterance_ms=40,
+        speech_pad_pre_ms=0,
+        speech_pad_post_ms=40,
+    )
+    session = FireRedVadSession(provider, _ForcedSilenceEngine())
+    audio = np.linspace(-0.5, 0.5, 1_200, dtype=np.float32)
+
+    first = session.process(audio, 16_000)
+    second = session.process(np.zeros(0, dtype=np.float32), 16_000)
+    remainder = session.snapshot()
+
+    assert first is not None
+    assert second is not None
+    assert remainder is not None
+    assert first.duration_ms == 30
+    assert first.started_ms == 0
+    assert first.ended_ms == second.started_ms == 30
+    assert second.ended_ms == remainder.started_ms
+    np.testing.assert_array_equal(
+        np.concatenate((first.audio, second.audio, remainder.audio)),
+        audio,
+    )
+
+
+def test_firered_repeated_forced_splits_are_contiguous_and_lossless() -> None:
+    class _RepeatedForcedEngine(_FakeEngine):
+        def detect_frame(self, frame: np.ndarray) -> _FrameResult:
+            self.frames.append(frame.copy())
+            index = len(self.frames)
+            self.postprocessor.hit_max_speech = index in {3, 6}
+            return {
+                1: _FrameResult(1, True, True, False, 1),
+                3: _FrameResult(3, False, False, True, 1, 3),
+                4: _FrameResult(4, True, True, False, 4),
+                6: _FrameResult(6, False, False, True, 4, 6),
+            }.get(index, _FrameResult(index, True))
+
+    provider = _provider(
+        max_utterance_ms=40,
+        speech_pad_pre_ms=0,
+        speech_pad_post_ms=40,
+    )
+    session = FireRedVadSession(provider, _RepeatedForcedEngine())
+    audio = np.linspace(-0.75, 0.75, 1_200, dtype=np.float32)
+
+    first = session.process(audio, 16_000)
+    second = session.process(np.zeros(0, dtype=np.float32), 16_000)
+    remainder = session.snapshot()
+
+    assert first is not None
+    assert second is not None
+    assert remainder is not None
+    assert [first.duration_ms, second.duration_ms, remainder.duration_ms] == [30, 30, 15]
+    assert first.ended_ms == second.started_ms
+    assert second.ended_ms == remainder.started_ms
+    np.testing.assert_array_equal(
+        np.concatenate((first.audio, second.audio, remainder.audio)),
+        audio,
+    )
+
+
+def test_firered_hard_cap_does_not_depend_on_engine_max_events() -> None:
+    engine = _FakeEngine({1: _FrameResult(1, True, True, False, 1)})
+    provider = _provider(
+        max_utterance_ms=30,
+        speech_pad_pre_ms=0,
+        speech_pad_post_ms=40,
+    )
+    session = FireRedVadSession(provider, engine)
+    audio = np.linspace(-0.9, 0.9, 1_200, dtype=np.float32)
+
+    first = session.process(audio, 16_000)
+    second = session.process(np.zeros(0, dtype=np.float32), 16_000)
+    remainder = session.snapshot()
+
+    assert first is not None
+    assert second is not None
+    assert remainder is not None
+    assert [first.duration_ms, second.duration_ms, remainder.duration_ms] == [30, 30, 15]
+    np.testing.assert_array_equal(
+        np.concatenate((first.audio, second.audio, remainder.audio)),
+        audio,
+    )
 
 
 def test_firered_sessions_share_weights_but_not_streaming_state() -> None:

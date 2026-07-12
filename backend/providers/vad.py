@@ -684,6 +684,7 @@ class FireRedVadSession(VadSession):
         self._frame_cursor = 0
         self._active_start: int | None = None
         self._pending_end: int | None = None
+        self._ignore_next_engine_forced_end = False
         self._degraded_start: int | None = 0 if self._degraded else None
         self._completed: deque[SpeechSegment] = deque()
 
@@ -716,7 +717,20 @@ class FireRedVadSession(VadSession):
                     dtype=np.float32,
                 )
                 result = self._engine.detect_frame(pcm_frame)
-                self._handle_frame_result(result, frame_start)
+                forced_endpoint = bool(
+                    getattr(
+                        getattr(self._engine, "postprocessor", None),
+                        "hit_max_speech",
+                        False,
+                    )
+                )
+                self._handle_frame_result(result, frame_start, forced_endpoint)
+                self._enforce_active_cap(
+                    min(
+                        self._audio_end,
+                        frame_start + _FIRERED_FRAME_SAMPLES,
+                    )
+                )
                 self._frame_cursor += _FIRERED_HOP_SAMPLES
         except Exception as exc:
             message = f"FireRedVAD inference failed: {exc}"
@@ -759,7 +773,12 @@ class FireRedVadSession(VadSession):
     def pop_error(self) -> str | None:
         return self._errors.popleft() if self._errors else None
 
-    def _handle_frame_result(self, result: Any, frame_start: int) -> None:
+    def _handle_frame_result(
+        self,
+        result: Any,
+        frame_start: int,
+        forced_endpoint: bool = False,
+    ) -> None:
         if result.is_speech_start:
             start = max(
                 0,
@@ -774,18 +793,28 @@ class FireRedVadSession(VadSession):
                 self._active_start = start
 
         if result.is_speech_end and self._active_start is not None:
+            if forced_endpoint:
+                if self._ignore_next_engine_forced_end:
+                    self._ignore_next_engine_forced_end = False
+                    self._pending_end = None
+                    return
+                speech_end_frame = max(1, int(result.speech_end_frame))
+                engine_boundary = min(
+                    self._audio_end,
+                    speech_end_frame * _FIRERED_HOP_SAMPLES,
+                )
+                self._queue_forced_segment(engine_boundary)
+                return
+
+            self._ignore_next_engine_forced_end = False
             frame_end = min(
                 self._audio_end,
                 frame_start + _FIRERED_FRAME_SAMPLES,
             )
-            forced = bool(result.is_speech)
-            if forced:
-                self._queue_active_segment(frame_end)
-            else:
-                post_samples = int(
-                    round(self._p.speech_pad_post_ms * self._p.sample_rate / 1000)
-                )
-                self._pending_end = frame_end + post_samples
+            post_samples = int(
+                round(self._p.speech_pad_post_ms * self._p.sample_rate / 1000)
+            )
+            self._pending_end = frame_end + post_samples
 
     def _append_timeline(self, audio: np.ndarray) -> None:
         if self._timeline.size == 0:
@@ -822,6 +851,36 @@ class FireRedVadSession(VadSession):
             self._completed.append(self._make_segment(self._active_start, end))
         self._active_start = None
         self._pending_end = None
+
+    def _queue_forced_segment(self, engine_boundary: int) -> None:
+        """Emit a capped segment while preserving overflow as continuation."""
+        if self._active_start is None:
+            return
+        end = engine_boundary
+        if self._max_utterance_ms > 0:
+            cap_samples = int(
+                round(self._max_utterance_ms * self._p.sample_rate / 1000)
+            )
+            end = min(end, self._active_start + cap_samples)
+        if end <= self._active_start:
+            return
+        self._completed.append(self._make_segment(self._active_start, end))
+        self._active_start = end
+        self._pending_end = None
+
+    def _enforce_active_cap(self, processed_end: int) -> None:
+        """Hard-bound active audio even when FireRed resets its speech counter."""
+        if self._active_start is None or self._max_utterance_ms <= 0:
+            return
+        cap_samples = int(
+            round(self._max_utterance_ms * self._p.sample_rate / 1000)
+        )
+        while processed_end - self._active_start >= cap_samples:
+            end = self._active_start + cap_samples
+            self._completed.append(self._make_segment(self._active_start, end))
+            self._active_start = end
+            self._pending_end = None
+            self._ignore_next_engine_forced_end = True
 
     def _force_split_degraded(self) -> None:
         if self._degraded_start is None:

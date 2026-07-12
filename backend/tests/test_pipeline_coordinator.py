@@ -5,6 +5,7 @@ import asyncio
 import threading
 
 import numpy as np
+import torch
 
 from backend.config import PipelineConfig
 from backend.models import RecordingSession, Utterance
@@ -817,3 +818,161 @@ def test_max_utterance_force_flushes_long_monologue() -> None:
     assert len(utterances) >= 1
     total = utterances[-1].ended_ms - utterances[0].started_ms
     assert total >= 600
+
+
+def test_coordinator_splits_overlong_streaming_segment_before_inference() -> None:
+    asr = FakeASRProvider()
+    coordinator = PipelineCoordinator(
+        PipelineConfig(vad_min_utterance_ms=100, vad_max_utterance_ms=8_000),
+        asr,
+        FakeDiarizationProvider(),
+        FakeEmbeddingProvider(),
+        vad_processor=ScriptedVADProcessor([True, False]),
+    )
+    coordinator.start_session(RecordingSession(id="sess-overlong-stream"))
+    utterances: list[Utterance] = []
+    coordinator.on("utterance", utterances.append)
+
+    asyncio.run(coordinator.process_chunk(np.ones(272_000, dtype=np.float32), 16_000))
+    asyncio.run(coordinator.process_chunk(np.zeros(1, dtype=np.float32), 16_000))
+
+    assert [samples for samples, _language in asr.calls] == [128_000, 128_000, 16_000]
+    assert [(item.started_ms, item.ended_ms) for item in utterances] == [
+        (0, 8_000),
+        (8_000, 16_000),
+        (16_000, 17_000),
+    ]
+
+
+def test_coordinator_splits_overlong_final_segment_before_inference() -> None:
+    asr = FakeASRProvider()
+    coordinator = PipelineCoordinator(
+        PipelineConfig(vad_min_utterance_ms=100, vad_max_utterance_ms=8_000),
+        asr,
+        FakeDiarizationProvider(),
+        FakeEmbeddingProvider(),
+        vad_processor=ScriptedVADProcessor([True]),
+    )
+    coordinator.start_session(RecordingSession(id="sess-overlong-final"))
+    utterances: list[Utterance] = []
+    coordinator.on("utterance", utterances.append)
+
+    asyncio.run(coordinator.process_chunk(np.ones(272_000, dtype=np.float32), 16_000))
+    coordinator.end_session()
+
+    assert [samples for samples, _language in asr.calls] == [128_000, 128_000, 16_000]
+    assert [(item.started_ms, item.ended_ms) for item in utterances] == [
+        (0, 8_000),
+        (8_000, 16_000),
+        (16_000, 17_000),
+    ]
+
+
+def _mock_cuda_memory(
+    monkeypatch,
+    *,
+    allocated_mib: float,
+    reserved_mib: float,
+) -> tuple[list[bool], list[bool]]:
+    empty_calls: list[bool] = []
+    reset_calls: list[bool] = []
+    mib = 1024 ** 2
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "current_device", lambda: 0)
+    monkeypatch.setattr(
+        torch.cuda, "memory_allocated", lambda _device=0: int(allocated_mib * mib)
+    )
+    monkeypatch.setattr(
+        torch.cuda, "memory_reserved", lambda _device=0: int(reserved_mib * mib)
+    )
+    monkeypatch.setattr(
+        torch.cuda, "max_memory_allocated", lambda _device=0: int(allocated_mib * mib)
+    )
+    monkeypatch.setattr(
+        torch.cuda, "max_memory_reserved", lambda _device=0: int(reserved_mib * mib)
+    )
+    monkeypatch.setattr(torch.cuda, "empty_cache", lambda: empty_calls.append(True))
+    monkeypatch.setattr(
+        torch.cuda,
+        "reset_peak_memory_stats",
+        lambda _device=0: reset_calls.append(True),
+    )
+    return empty_calls, reset_calls
+
+
+def test_diarization_releases_cuda_cache_only_above_one_gib(monkeypatch) -> None:
+    coordinator = PipelineCoordinator(
+        PipelineConfig(vad_min_utterance_ms=5),
+        FakeASRProvider(),
+        FakeDiarizationProvider(),
+        FakeEmbeddingProvider(),
+        vad_processor=FakeVADProcessor(),
+        source="system",
+    )
+    empty_calls, reset_calls = _mock_cuda_memory(
+        monkeypatch,
+        allocated_mib=128,
+        reserved_mib=1_152,
+    )
+
+    coordinator._infer_utterance(
+        np.ones(1_600, dtype=np.float32), None, 16_000, "sess-cache-limit", 0, 100
+    )
+    assert empty_calls == []
+    assert reset_calls == [True]
+
+    empty_calls, reset_calls = _mock_cuda_memory(
+        monkeypatch,
+        allocated_mib=128,
+        reserved_mib=1_153,
+    )
+    coordinator._infer_utterance(
+        np.ones(1_600, dtype=np.float32), None, 16_000, "sess-cache-purge", 0, 100
+    )
+    assert empty_calls == [True]
+    assert reset_calls == [True]
+
+
+def test_diarization_releases_excess_cuda_cache_after_failure(monkeypatch) -> None:
+    coordinator = PipelineCoordinator(
+        PipelineConfig(vad_min_utterance_ms=5),
+        FakeASRProvider(),
+        BrokenDiarizationProvider(),
+        FakeEmbeddingProvider(),
+        vad_processor=FakeVADProcessor(),
+        source="system",
+    )
+    empty_calls, _reset_calls = _mock_cuda_memory(
+        monkeypatch,
+        allocated_mib=128,
+        reserved_mib=2_000,
+    )
+
+    coordinator._infer_utterance(
+        np.ones(1_600, dtype=np.float32), None, 16_000, "sess-cache-failure", 0, 100
+    )
+
+    assert empty_calls == [True]
+
+
+def test_mic_self_diarization_bypass_does_not_touch_cuda_cache(monkeypatch) -> None:
+    coordinator = PipelineCoordinator(
+        PipelineConfig(vad_min_utterance_ms=5, mic_self_contact_id="contact-self"),
+        FakeASRProvider(),
+        FakeDiarizationProvider(),
+        FakeEmbeddingProvider(),
+        vad_processor=FakeVADProcessor(),
+        source="mic",
+    )
+    empty_calls, reset_calls = _mock_cuda_memory(
+        monkeypatch,
+        allocated_mib=128,
+        reserved_mib=2_000,
+    )
+
+    coordinator._infer_utterance(
+        np.ones(1_600, dtype=np.float32), None, 16_000, "sess-self", 0, 100
+    )
+
+    assert empty_calls == []
+    assert reset_calls == []
