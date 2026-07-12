@@ -18,7 +18,7 @@ import os
 import re
 import sqlite3
 import wave
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -69,7 +69,7 @@ def _write_dev_audio_wav(
 
     output_dir = _dev_audio_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     filename = (
         f"{timestamp}-{_safe_filename_part(session_id)}-{_safe_filename_part(track)}.wav"
     )
@@ -348,12 +348,16 @@ async def stream(ws: WebSocket) -> None:
                 log.exception("failed to save dev audio capture")
             try:
                 coord.end_session()
-                session_repo.update_session(session.id, ended_at=datetime.utcnow())
+                session_repo.update_session(
+                    session.id, ended_at=datetime.now(timezone.utc)
+                )
             except Exception:
                 log.exception("end_session failed")
             if debug is not None:
                 try:
-                    html_path = debug.finish(ended_at=datetime.utcnow().isoformat())
+                    html_path = debug.finish(
+                        ended_at=datetime.now(timezone.utc).isoformat()
+                    )
                     log.info("SUPER DEBUG: report written to %s", html_path)
                 except Exception:
                     log.exception("debug report generation failed")

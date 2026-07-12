@@ -1,7 +1,15 @@
 """Tests for domain models."""
 import numpy as np
+from datetime import timezone
 
-from backend.models import Person, RecordingSession, SpeakerSegment, Utterance
+from backend.models import (
+    Person,
+    RecordingSession,
+    SpeakerSegment,
+    UnresolvedSpeaker,
+    Utterance,
+    VoiceProfile,
+)
 
 
 def test_person_creation():
@@ -39,3 +47,11 @@ def test_speaker_segment_creation():
     assert segment.embedding.shape == (192,)
     assert segment.sim_score == 0.85
     assert segment.status == "unknown"
+
+
+def test_time_defaults_are_timezone_aware_utc():
+    """New domain records must carry an unambiguous UTC timestamp."""
+    assert Person().created_at.tzinfo == timezone.utc
+    assert VoiceProfile().recorded_at.tzinfo == timezone.utc
+    assert RecordingSession().started_at.tzinfo == timezone.utc
+    assert UnresolvedSpeaker().created_at.tzinfo == timezone.utc

@@ -27,6 +27,11 @@ def _suppress_speechbrain_pretrained_deprecation() -> None:
         ),
         category=UserWarning,
     )
+    warnings.filterwarnings(
+        "ignore",
+        message=r"torchaudio\._backend\.list_audio_backends has been deprecated\..*",
+        category=UserWarning,
+    )
 
 
 def _patch_speechbrain_hf_compat() -> None:

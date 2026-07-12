@@ -67,7 +67,7 @@ def seed():
     print("Contacts:", list(contact_map.keys()))
 
     # ------ Sessions ------
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     sessions_data = [
         (
             "Стендап команди продукту",

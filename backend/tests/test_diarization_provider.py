@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from types import SimpleNamespace
+import sys
+from types import ModuleType, SimpleNamespace
 import warnings
 
 import pytest
@@ -11,6 +12,7 @@ from backend.providers.diarization import (
     PyAnnoteDiarizationProvider,
     _iter_diarization_tracks,
     _adapt_sortformer_segments,
+    _suppress_torchaudio_backend_deprecation_warning,
     _suppress_unused_pyannote_torchcodec_warning,
     _speechbrain_windows_inspect_compat,
     create_diarization_provider,
@@ -106,18 +108,23 @@ def test_nemo_sortformer_load_fails_with_actionable_message(monkeypatch):
 def test_speechbrain_windows_inspect_compat_ignores_inspect_callers(monkeypatch):
     """Verify the inspect guard prevents lazy module loading from inspect-originated calls.
 
-    Uses ``k2_integration`` as the module name because k2 is the canonical
-    real-world example of a SpeechBrain optional integration that breaks on
-    Windows when accidentally loaded (see ``_remove_speechbrain_optional_lazy_imports``).
+    Uses a small fake SpeechBrain module so this unit test does not import the
+    optional ML runtime or produce third-party extension warnings. The actual
+    SpeechBrain integration is exercised by the ML e2e tests.
     """
-    pytest.importorskip("speechbrain")
-    from speechbrain.utils import importutils
+    class FakeLazyModule:
+        def ensure_module(self, stacklevel: int):
+            return object()
 
-    lazy = importutils.LazyModule(
-        "speechbrain.k2_integration",
-        "definitely_missing_optional_module",
-        None,
-    )
+    fake_importutils = SimpleNamespace(LazyModule=FakeLazyModule)
+    fake_utils = ModuleType("speechbrain.utils")
+    fake_utils.importutils = fake_importutils  # type: ignore[attr-defined]
+    fake_speechbrain = ModuleType("speechbrain")
+    fake_speechbrain.utils = fake_utils  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "speechbrain", fake_speechbrain)
+    monkeypatch.setitem(sys.modules, "speechbrain.utils", fake_utils)
+
+    lazy = FakeLazyModule()
 
     monkeypatch.setattr(
         "backend.providers.diarization._called_from_inspect_py",
@@ -139,3 +146,43 @@ def test_suppress_unused_pyannote_torchcodec_warning_filters_only_target_warning
 
         with pytest.warns(UserWarning, match="different warning"):
             warnings.warn("different warning", UserWarning)
+
+
+def test_suppress_torchaudio_backend_deprecation_warning_filters_only_target_warning():
+    with _suppress_torchaudio_backend_deprecation_warning():
+        warnings.warn(
+            "torchaudio._backend.list_audio_backends has been deprecated.",
+            UserWarning,
+        )
+
+        with pytest.warns(UserWarning, match="different warning"):
+            warnings.warn("different warning", UserWarning)
+
+
+def test_import_nemo_sortformer_class_suppresses_torchaudio_warning(monkeypatch):
+    class FakeModels:
+        SortformerEncLabelModel = object
+
+    def fake_import(name: str):
+        assert name == "nemo.collections.asr.models"
+        warnings.warn(
+            "torchaudio._backend.list_audio_backends has been deprecated.",
+            UserWarning,
+        )
+        return FakeModels
+
+    monkeypatch.setattr(
+        "backend.providers.diarization._install_speechbrain_windows_inspect_patch",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "backend.providers.diarization.importlib.import_module", fake_import
+    )
+
+    with warnings.catch_warnings(record=True) as recorded:
+        warnings.simplefilter("always")
+        from backend.providers.diarization import import_nemo_sortformer_class
+
+        assert import_nemo_sortformer_class() is object
+
+    assert recorded == []

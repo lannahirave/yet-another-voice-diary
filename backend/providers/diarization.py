@@ -20,6 +20,26 @@ SORTFORMER_V21_MODEL_ID = "sortformer-v2.1"
 SORTFORMER_V21_REPO_ID = "nvidia/diar_streaming_sortformer_4spk-v2.1"
 
 
+def _ignore_known_nemo_deprecation_warnings() -> None:
+    """Ignore deprecations emitted by the pinned NeMo dependency stack.
+
+    These warnings come from NeMo/PyTorch extension internals rather than
+    Voice Diary code. Keep the filters narrowly scoped to the known messages;
+    application deprecations should remain visible.
+    """
+    warnings.filterwarnings(
+        "ignore",
+        message=r"builtin type (?:SwigPyPacked|SwigPyObject|swigvarlink) has no __module__ attribute",
+        category=DeprecationWarning,
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message=r"Python 3\.14 will, by default, filter extracted tar archives.*",
+        category=DeprecationWarning,
+        module=r"nemo\.core\.connectors\.save_restore_connector",
+    )
+
+
 def _is_unloaded_speechbrain_lazy_module(value: object) -> bool:
     type_module = type(value).__module__
     return (
@@ -206,6 +226,18 @@ def _suppress_unused_pyannote_torchcodec_warning():
         yield
 
 
+@contextmanager
+def _suppress_torchaudio_backend_deprecation_warning():
+    """Ignore SpeechBrain's deprecated Torchaudio backend probe warning."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"torchaudio\._backend\.list_audio_backends has been deprecated\..*",
+            category=UserWarning,
+        )
+        yield
+
+
 def import_nemo_sortformer_class() -> Any:
     """Import NeMo Sortformer in the same process as SpeechBrain safely.
 
@@ -214,17 +246,19 @@ def import_nemo_sortformer_class() -> Any:
     which touches those lazy modules and can try to import the optional k2
     integration even though this app does not use it.
     """
-    _install_speechbrain_windows_inspect_patch()
-    if sys.platform.startswith("win"):
-        _remove_speechbrain_optional_lazy_imports()
-    speechbrain_compat = (
-        _speechbrain_windows_inspect_compat()
-        if sys.platform.startswith("win")
-        else nullcontext()
-    )
-    with speechbrain_compat:
-        models_mod = importlib.import_module("nemo.collections.asr.models")
-        return getattr(models_mod, "SortformerEncLabelModel")
+    _ignore_known_nemo_deprecation_warnings()
+    with _suppress_torchaudio_backend_deprecation_warning():
+        _install_speechbrain_windows_inspect_patch()
+        if sys.platform.startswith("win"):
+            _remove_speechbrain_optional_lazy_imports()
+        speechbrain_compat = (
+            _speechbrain_windows_inspect_compat()
+            if sys.platform.startswith("win")
+            else nullcontext()
+        )
+        with speechbrain_compat:
+            models_mod = importlib.import_module("nemo.collections.asr.models")
+            return getattr(models_mod, "SortformerEncLabelModel")
 
 
 class DiarizationSegment:
@@ -320,7 +354,10 @@ class PyAnnoteDiarizationProvider:
             # before pyannote triggers pl_legacy_patch() which accesses
             # pl.utilities via attribute lookup.
             _ensure_lightning_utilities()
-            with _suppress_unused_pyannote_torchcodec_warning():
+            with (
+                _suppress_unused_pyannote_torchcodec_warning(),
+                _suppress_torchaudio_backend_deprecation_warning(),
+            ):
                 from pyannote.audio import Pipeline  # type: ignore[import-untyped]
         except Exception as exc:
             self._error = (
@@ -343,6 +380,7 @@ class PyAnnoteDiarizationProvider:
                 speechbrain_compat,
                 _pyannote_checkpoint_load_compat(model_name),
                 _suppress_unused_pyannote_torchcodec_warning(),
+                _suppress_torchaudio_backend_deprecation_warning(),
             ):
                 self._model = Pipeline.from_pretrained(model_name)
         except Exception as exc:

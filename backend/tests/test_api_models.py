@@ -97,6 +97,13 @@ async def test_model_load_logs_already_loaded(client, app, caplog):
 async def test_sortformer_load_surfaces_controlled_error_without_nemo(
     client, monkeypatch, tmp_path
 ):
+    def fail_import():
+        raise ModuleNotFoundError("No module named 'nemo'")
+
+    monkeypatch.setattr(
+        "backend.providers.diarization.import_nemo_sortformer_class",
+        fail_import,
+    )
     monkeypatch.setattr(
         BackendConfig,
         "default_path",

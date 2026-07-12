@@ -10,7 +10,7 @@ import json
 import os
 import wave
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -48,7 +48,7 @@ def _wav_to_disk(audio: np.ndarray, path: Path, sample_rate: int = 16000) -> Non
 
 
 def _now_iso() -> str:
-    return datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
 
 
 @dataclass
