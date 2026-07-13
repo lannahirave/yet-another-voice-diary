@@ -164,3 +164,10 @@ Voice Diary combines a desktop product shell with a local ML backend and several
 - embedding-space metadata to avoid invalid voice-profile matches
 - background model lifecycle management with progress reporting
 - packaged runtime installation that does not depend on the source checkout or development virtualenvs
+
+## Privacy and Security
+
+Voice Diary is local-first by default, but recordings, transcripts, and speaker
+embeddings are sensitive data. See [Privacy and Security](docs/privacy-security.md)
+for storage paths, cloud-provider behavior, deletion/export procedures, token
+handling, Hugging Face requirements, and third-party model licenses.
