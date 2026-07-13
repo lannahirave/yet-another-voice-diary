@@ -14,30 +14,11 @@ import torch  # type: ignore[import-untyped]
 
 from ..config import normalize_diarization_model_id
 from .devices import normalize_indexed_cuda_device
+from .compat import suppress_known_ml_warnings
 
 log = logging.getLogger(__name__)
 SORTFORMER_V21_MODEL_ID = "sortformer-v2.1"
 SORTFORMER_V21_REPO_ID = "nvidia/diar_streaming_sortformer_4spk-v2.1"
-
-
-def _ignore_known_nemo_deprecation_warnings() -> None:
-    """Ignore deprecations emitted by the pinned NeMo dependency stack.
-
-    These warnings come from NeMo/PyTorch extension internals rather than
-    Voice Diary code. Keep the filters narrowly scoped to the known messages;
-    application deprecations should remain visible.
-    """
-    warnings.filterwarnings(
-        "ignore",
-        message=r"builtin type (?:SwigPyPacked|SwigPyObject|swigvarlink) has no __module__ attribute",
-        category=DeprecationWarning,
-    )
-    warnings.filterwarnings(
-        "ignore",
-        message=r"Python 3\.14 will, by default, filter extracted tar archives.*",
-        category=DeprecationWarning,
-        module=r"nemo\.core\.connectors\.save_restore_connector",
-    )
 
 
 def _is_unloaded_speechbrain_lazy_module(value: object) -> bool:
@@ -246,8 +227,10 @@ def import_nemo_sortformer_class() -> Any:
     which touches those lazy modules and can try to import the optional k2
     integration even though this app does not use it.
     """
-    _ignore_known_nemo_deprecation_warnings()
-    with _suppress_torchaudio_backend_deprecation_warning():
+    with (
+        suppress_known_ml_warnings(),
+        _suppress_torchaudio_backend_deprecation_warning(),
+    ):
         _install_speechbrain_windows_inspect_patch()
         if sys.platform.startswith("win"):
             _remove_speechbrain_optional_lazy_imports()
@@ -355,6 +338,7 @@ class PyAnnoteDiarizationProvider:
             # pl.utilities via attribute lookup.
             _ensure_lightning_utilities()
             with (
+                suppress_known_ml_warnings(),
                 _suppress_unused_pyannote_torchcodec_warning(),
                 _suppress_torchaudio_backend_deprecation_warning(),
             ):
@@ -379,6 +363,7 @@ class PyAnnoteDiarizationProvider:
             with (
                 speechbrain_compat,
                 _pyannote_checkpoint_load_compat(model_name),
+                suppress_known_ml_warnings(),
                 _suppress_unused_pyannote_torchcodec_warning(),
                 _suppress_torchaudio_backend_deprecation_warning(),
             ):

@@ -18,6 +18,7 @@ from typing import Any, Optional
 import numpy as np
 
 from ..models import Utterance
+from .compat import suppress_known_ml_warnings
 
 log = logging.getLogger(__name__)
 
@@ -124,7 +125,8 @@ class WhisperASRProvider:
 
         if use_faster_whisper:
             try:
-                from faster_whisper import WhisperModel  # type: ignore[import-untyped]
+                with suppress_known_ml_warnings():
+                    from faster_whisper import WhisperModel  # type: ignore[import-untyped]
             except Exception as exc:
                 faster_whisper_error = exc
                 log.exception("faster-whisper backend failed to import")
@@ -140,12 +142,13 @@ class WhisperASRProvider:
                     compute_type,
                 )
                 try:
-                    self._model = WhisperModel(
-                        self.model_id,
-                        device=device,
-                        compute_type=compute_type,
-                        cpu_threads=self.cpu_threads,
-                    )
+                    with suppress_known_ml_warnings():
+                        self._model = WhisperModel(
+                            self.model_id,
+                            device=device,
+                            compute_type=compute_type,
+                            cpu_threads=self.cpu_threads,
+                        )
                 except Exception as exc:
                     faster_whisper_error = exc
                     if device == "cuda" and self._is_cuda_runtime_load_error(exc):
@@ -160,12 +163,13 @@ class WhisperASRProvider:
                         )
                         log.warning(self._error)
                         try:
-                            self._model = WhisperModel(
-                                self.model_id,
-                                device="cpu",
-                                compute_type=cpu_compute_type,
-                                cpu_threads=self.cpu_threads,
-                            )
+                            with suppress_known_ml_warnings():
+                                self._model = WhisperModel(
+                                    self.model_id,
+                                    device="cpu",
+                                    compute_type=cpu_compute_type,
+                                    cpu_threads=self.cpu_threads,
+                                )
                             self._backend = "faster-whisper"
                             self._state = "LOADED"
                             return

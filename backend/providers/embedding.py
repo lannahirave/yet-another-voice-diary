@@ -2,36 +2,14 @@
 from __future__ import annotations
 
 import logging
-import warnings
 from typing import Any, Optional
 
 import numpy as np
 
 from .devices import normalize_indexed_cuda_device
+from .compat import suppress_known_ml_warnings
 
 log = logging.getLogger(__name__)
-
-
-def _suppress_speechbrain_pretrained_deprecation() -> None:
-    """Silence SpeechBrain's `speechbrain.pretrained` compatibility warning.
-
-    We already import from ``speechbrain.inference``. Some SpeechBrain/PyAnnote
-    internals still touch the deprecated alias and emit a noisy user warning on
-    every startup.
-    """
-    warnings.filterwarnings(
-        "ignore",
-        message=(
-            r"Module 'speechbrain\.pretrained' was deprecated, redirecting to "
-            r"'speechbrain\.inference'\..*"
-        ),
-        category=UserWarning,
-    )
-    warnings.filterwarnings(
-        "ignore",
-        message=r"torchaudio\._backend\.list_audio_backends has been deprecated\..*",
-        category=UserWarning,
-    )
 
 
 def _patch_speechbrain_hf_compat() -> None:
@@ -109,15 +87,16 @@ class ECAPATDNNEmbeddingProvider:
         """Load model lazily."""
         self._state = "LOADING"
         self._error = None
-        _suppress_speechbrain_pretrained_deprecation()
         model_name = (
             "speechbrain/spkrec-ecapa-voxceleb"
             if self.model_id in {"ecapa", "ecapa-tdnn"}
             else self.model_id
         )
         try:
-            import torch  # type: ignore[import-untyped]
-            from speechbrain.inference import SpeakerRecognition  # type: ignore[import-untyped]
+            with suppress_known_ml_warnings():
+                import torch  # type: ignore[import-untyped]
+                from speechbrain.inference import SpeakerRecognition  # type: ignore[import-untyped]
+                from speechbrain.utils.fetching import LocalStrategy  # type: ignore[import-untyped]
         except Exception as exc:
             self._error = (
                 f"speechbrain/torch not installed or could not be loaded: {exc}"
@@ -126,15 +105,18 @@ class ECAPATDNNEmbeddingProvider:
             log.exception("SpeechBrain embedding import failed")
             raise RuntimeError(self._error) from exc
 
-        _patch_speechbrain_hf_compat()
+        with suppress_known_ml_warnings():
+            _patch_speechbrain_hf_compat()
 
         device = normalize_indexed_cuda_device(self._resolve_device())
         try:
-            self._model = SpeakerRecognition.from_hparams(
-                source=model_name,
-                savedir=f"backend/pretrained_models/{model_name.replace('/', '_')}",
-                run_opts={"device": device},
-            )
+            with suppress_known_ml_warnings():
+                self._model = SpeakerRecognition.from_hparams(
+                    source=model_name,
+                    savedir=f"backend/pretrained_models/{model_name.replace('/', '_')}",
+                    local_strategy=LocalStrategy.COPY,
+                    run_opts={"device": device},
+                )
         except Exception as exc:
             self._error = f"failed to load embedding model {model_name}: {exc}"
             self._state = "ERROR"

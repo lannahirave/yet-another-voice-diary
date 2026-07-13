@@ -17,6 +17,7 @@ from backend.providers.diarization import (
     _speechbrain_windows_inspect_compat,
     create_diarization_provider,
 )
+from backend.providers.compat import suppress_known_ml_warnings
 
 
 @dataclass
@@ -153,6 +154,17 @@ def test_suppress_torchaudio_backend_deprecation_warning_filters_only_target_war
         warnings.warn(
             "torchaudio._backend.list_audio_backends has been deprecated.",
             UserWarning,
+        )
+
+        with pytest.warns(UserWarning, match="different warning"):
+            warnings.warn("different warning", UserWarning)
+
+
+def test_suppress_known_ml_warnings_filters_dependency_messages_only():
+    with suppress_known_ml_warnings():
+        warnings.warn(
+            "builtin type SwigPyPacked has no __module__ attribute",
+            DeprecationWarning,
         )
 
         with pytest.warns(UserWarning, match="different warning"):
