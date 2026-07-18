@@ -195,6 +195,14 @@ jobs:
       - name: Generate SHA-256 checksums
         shell: bash
         run: |
+          while IFS= read -r -d '' file; do
+            directory=${file%/*}
+            filename=${file##*/}
+            normalized_filename=${filename// /.}
+            if [[ "$filename" != "$normalized_filename" ]]; then
+              mv -- "$file" "$directory/$normalized_filename"
+            fi
+          done < <(find release-assets -maxdepth 1 -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' \) -print0)
           cd release-assets
           mapfile -d '' installer_files < <(find . -maxdepth 1 -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' \) -print0 | sort -z)
           test "${#installer_files[@]}" -gt 0
@@ -216,17 +224,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_IS_PRERELEASE: ${{ contains(github.ref_name, '-alpha.') || contains(github.ref_name, '-beta.') || contains(github.ref_name, '-rc.') }}
         run: |
-          release_args=(
-            "$GITHUB_REF_NAME"
+          release_files=(
+            release-assets/*.exe
+            release-assets/*.dmg
+            release-assets/*.AppImage
+            release-assets/*.deb
+            release-assets/SHA256SUMS.txt
+          )
+          release_options=(
             --title "Voice Diary $GITHUB_REF_NAME"
             --notes-file docs/releases/v0.1.0-rc.1.md
           )
           if [[ "$RELEASE_IS_PRERELEASE" == "true" ]]; then
-            release_args+=(--prerelease)
+            release_options+=(--prerelease)
           fi
-          gh release create "${release_args[@]}" \
-            release-assets/*.exe \
-            release-assets/*.dmg \
-            release-assets/*.AppImage \
-            release-assets/*.deb \
-            release-assets/SHA256SUMS.txt
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" "${release_options[@]}"
+            gh release upload "$GITHUB_REF_NAME" "${release_files[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${release_options[@]}" "${release_files[@]}"
+          fi
