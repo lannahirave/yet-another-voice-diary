@@ -211,15 +211,22 @@ jobs:
           (cd release-assets && sha256sum -c SHA256SUMS.txt)
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: Voice Diary ${{ github.ref_name }}
-          body_path: docs/releases/v0.1.0-rc.1.md
-          prerelease: ${{ contains(github.ref_name, '-alpha.') || contains(github.ref_name, '-beta.') || contains(github.ref_name, '-rc.') }}
-          files: |
-            release-assets/*.exe
-            release-assets/*.dmg
-            release-assets/*.AppImage
-            release-assets/*.deb
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_IS_PRERELEASE: ${{ contains(github.ref_name, '-alpha.') || contains(github.ref_name, '-beta.') || contains(github.ref_name, '-rc.') }}
+        run: |
+          release_args=(
+            "$GITHUB_REF_NAME"
+            --title "Voice Diary $GITHUB_REF_NAME"
+            --notes-file docs/releases/v0.1.0-rc.1.md
+          )
+          if [[ "$RELEASE_IS_PRERELEASE" == "true" ]]; then
+            release_args+=(--prerelease)
+          fi
+          gh release create "${release_args[@]}" \
+            release-assets/*.exe \
+            release-assets/*.dmg \
+            release-assets/*.AppImage \
+            release-assets/*.deb \
             release-assets/SHA256SUMS.txt
