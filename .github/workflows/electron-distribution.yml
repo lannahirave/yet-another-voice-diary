@@ -1,7 +1,13 @@
 name: Electron distribution
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   frontend-checks:
@@ -159,3 +165,61 @@ jobs:
             frontend/dist-app/*.yaml
           if-no-files-found: ignore
           retention-days: ${{ startsWith(github.ref, 'refs/tags/v') && 90 || 14 }}
+  publish-release:
+    name: Publish GitHub release
+    needs: build-installers
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: voice-diary-windows-installer
+          path: release-assets
+
+      - name: Download macOS installer
+        uses: actions/download-artifact@v4
+        with:
+          name: voice-diary-macos-dmg
+          path: release-assets
+
+      - name: Download Linux installers
+        uses: actions/download-artifact@v4
+        with:
+          name: voice-diary-linux-installers
+          path: release-assets
+
+      - name: Generate SHA-256 checksums
+        shell: bash
+        run: |
+          cd release-assets
+          mapfile -d '' installer_files < <(find . -maxdepth 1 -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' \) -print0 | sort -z)
+          test "${#installer_files[@]}" -gt 0
+          sha256sum "${installer_files[@]}" > SHA256SUMS.txt
+          test -s SHA256SUMS.txt
+
+      - name: Validate release assets
+        shell: bash
+        run: |
+          test -n "$(find release-assets -maxdepth 1 -type f -name '*.exe' -print -quit)"
+          test -n "$(find release-assets -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          test -n "$(find release-assets -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          test -n "$(find release-assets -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          (cd release-assets && sha256sum -c SHA256SUMS.txt)
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Voice Diary ${{ github.ref_name }}
+          body_path: docs/releases/v0.1.0-rc.1.md
+          prerelease: ${{ contains(github.ref_name, '-alpha.') || contains(github.ref_name, '-beta.') || contains(github.ref_name, '-rc.') }}
+          files: |
+            release-assets/*.exe
+            release-assets/*.dmg
+            release-assets/*.AppImage
+            release-assets/*.deb
+            release-assets/SHA256SUMS.txt
