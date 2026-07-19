@@ -21,6 +21,7 @@ voice_diary_backend.egg-info
 .dev-audio
 .run-logs
 .playwright-mcp
+.readme-demo-home/
 backend/pretrained_models
 
 # IDE
