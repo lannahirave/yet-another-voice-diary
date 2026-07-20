@@ -103,7 +103,7 @@ const ASR_MODELS: ModelDef[] = [
   {
     id: 'large-v3-turbo',
     name: 'whisper large-v3-turbo',
-    size: '~1.6 GB',
+    size: '~4.5 GB',
     speed: '',
     quality: 'settings.qualityRecommended',
   },
@@ -123,14 +123,14 @@ const DIAR_MODELS: ModelDef[] = [
   {
     id: 'pyannote',
     name: 'PyAnnote 3.1',
-    size: '~270 MB',
+    size: '~1–2 GB',
     speed: '',
     quality: 'settings.qualityRecommended',
   },
   {
     id: 'sortformer-v2.1',
     name: 'NVIDIA Streaming Sortformer 4spk v2.1',
-    size: '—',
+    size: '~1 GB',
     speed: '',
     quality: 'settings.qualityAlternative',
   },
