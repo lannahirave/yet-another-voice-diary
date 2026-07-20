@@ -56,6 +56,8 @@
     "errorMicNotFound": "Microphone not found.",
     "errorMicBusy": "Microphone is in use by another application.",
     "errorBrowserUnsupported": "This browser does not support microphone access.",
+    "errorDeleteTitle": "Delete failed",
+    "errorDelete": "The utterance could not be deleted.",
     "captureSystem": "Capture system audio",
     "captureSystemHint": "Records both the mic and the system output. Headphones recommended to avoid the mic re-capturing speaker output.",
     "sourceMic": "Microphone",

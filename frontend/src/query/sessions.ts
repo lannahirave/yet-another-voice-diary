@@ -59,15 +59,35 @@ export function useDeleteUtteranceMutation(sessionId: string | null) {
 
   return useMutation({
     mutationFn: (utteranceId: string) => deleteUtterance(utteranceId),
-    onSuccess: async () => {
+    onMutate: async (utteranceId) => {
+      if (!sessionId) return null
+
+      const queryKey = queryKeys.sessions.utterances(sessionId)
+      await queryClient.cancelQueries({ queryKey })
+      const previous = queryClient.getQueryData<ApiUtterance[]>(queryKey)
+
+      queryClient.setQueryData<ApiUtterance[] | undefined>(
+        queryKey,
+        (utterances) => utterances?.filter((utterance) => utterance.id !== utteranceId),
+      )
+
+      return { queryKey, previous }
+    },
+    onError: (_error, _utteranceId, context) => {
+      if (!context) return
+      queryClient.setQueryData(context.queryKey, context.previous)
+    },
+    onSettled: async () => {
       if (sessionId) {
-        await queryClient.invalidateQueries({
-          queryKey: queryKeys.sessions.utterances(sessionId),
-        })
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.sessions.utterances(sessionId),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.sessions.list(),
+          }),
+        ])
       }
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.sessions.list(),
-      })
     },
   })
 }

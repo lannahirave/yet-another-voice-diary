@@ -14,33 +14,13 @@ import { createSession } from '../api/sessions'
 import { useContactsData } from '../query/contacts'
 import type { Utterance } from '../types/domain'
 import { fmt } from '../utils/format'
-
-/** Merge granular (live-streamed) utterances from the same speaker when
- *  the gap between them is under 1 second.  Keeps the display clean during
- *  fast exchanges while backend embeddings are still extracted from the
- *  accumulated audio when the speaker's turn ends. */
-const MERGE_GAP_MS = 1000
-
-function mergeLiveUtterance(prev: Utterance[], next: Utterance): Utterance[] {
-  if (prev.length === 0) return [next]
-  const last = prev[prev.length - 1]
-  const gap = (next.startedMs ?? 0) - (last.endedMs ?? 0)
-  if (
-    last.speakerId === next.speakerId &&
-    last.source === next.source &&
-    gap >= 0 && gap < MERGE_GAP_MS
-  ) {
-    const merged: Utterance = {
-      ...last,
-      id: next.id,
-      speakerSegmentId: next.speakerSegmentId ?? last.speakerSegmentId,
-      text: last.text + ' ' + next.text,
-      endedMs: next.endedMs,
-    }
-    return [...prev.slice(0, -1), merged]
-  }
-  return [...prev, next]
-}
+import {
+  appendLiveUtterance,
+  deriveLiveTranscriptStats,
+  removeLiveUtterance,
+  restoreLiveUtterance,
+  updateSpeakerBySegment,
+} from '../utils/liveTranscript'
 
 import { Avatar } from './shared/Avatar'
 import { AudioLevelFooterLive } from './shared/AudioLevelFooter'
@@ -134,12 +114,6 @@ interface CurrentSessionProps {
   onIdentifyUnknown?: () => void
 }
 
-interface SpeakerStat {
-  speakerId: string | null
-  ms: number
-  order: number
-}
-
 interface AudioLevelSnapshot {
   db: number
   level: number
@@ -212,16 +186,27 @@ export function CurrentSession({
   const onDeleteUtterance = useCallback(
     async (uttId: string) => {
       if (deletingRef.current.has(uttId)) return
+      const removal = removeLiveUtterance(utterances, uttId)
+      if (!removal.removed) return
+
       deletingRef.current.add(uttId)
       setDeletingIds(new Set(deletingRef.current))
+      setUtterances(() => removal.utterances)
       try {
         await deleteMutation.mutateAsync(uttId)
+      } catch (err) {
+        setUtterances((current) => restoreLiveUtterance(current, removal.removed!))
+        addToast({
+          type: 'error',
+          title: t('currentSession.errorDeleteTitle'),
+          message: err instanceof Error ? err.message : t('currentSession.errorDelete'),
+        })
       } finally {
         deletingRef.current.delete(uttId)
         setDeletingIds(new Set(deletingRef.current))
       }
     },
-    [deleteMutation],
+    [addToast, deleteMutation, setUtterances, t, utterances],
   )
 
   // ---- virtualized utterance list ------------------------------------
@@ -229,25 +214,17 @@ export function CurrentSession({
   const rowVirtualizer = useVirtualizer({
     count: utterances.length,
     getScrollElement: useCallback(() => transcriptRef.current, []),
+    getItemKey: (index) => utterances[index]?.id ?? `row-${index}`,
     estimateSize: ESTIMATE_SIZE,
     overscan: 3,
   })
 
   // ---- memoized stats (avoids O(n) compute on audio-level re-renders) --
 
-  const { speakerStats, totalMs, unknownInSession } = useMemo(() => {
-    const stats = utterances.reduce<Record<string, SpeakerStat>>((acc, u, idx) => {
-      const k = u.speakerId ?? '__unk__'
-      if (!acc[k]) acc[k] = { speakerId: u.speakerId, ms: 0, order: idx }
-      acc[k].ms += 4500
-      return acc
-    }, {})
-    const total = Object.values(stats).reduce((s, v) => s + v.ms, 0) || 1
-    const unknown = utterances.filter(
-      (u) => !u.speakerId && u.speakerSegmentId !== undefined,
-    ).length
-    return { speakerStats: stats, totalMs: total, unknownInSession: unknown }
-  }, [utterances])
+  const { speakerStats, totalMs, unknownInSession } = useMemo(
+    () => deriveLiveTranscriptStats(utterances),
+    [utterances],
+  )
 
   useEffect(() => {
     if (recState === 'recording') {
@@ -259,11 +236,13 @@ export function CurrentSession({
   }, [recState])
 
   useEffect(() => {
-    if (showLive && transcriptRef.current) {
+    if (transcriptRef.current) {
       rowVirtualizer.measure()
-      rowVirtualizer.scrollToIndex(utterances.length - 1, { align: 'end' })
+      if (showLive && utterances.length > 0) {
+        rowVirtualizer.scrollToIndex(utterances.length - 1, { align: 'end' })
+      }
     }
-  }, [utterances, showLive, rowVirtualizer])
+  }, [utterances.length, showLive, rowVirtualizer])
 
   const stopAudio = () => {
     micLevelRef.current = SILENCE_SNAPSHOT
@@ -326,7 +305,7 @@ export function CurrentSession({
       const m = Math.floor(s / 60)
       const time = `${m}:${String(s % 60).padStart(2, '0')}`
       setUtterances((prev) =>
-        mergeLiveUtterance(prev, {
+        appendLiveUtterance(prev, {
           id: d.id,
           speakerId: d.speaker_contact_id,
           speakerSegmentId: d.speaker_segment_id,
@@ -354,11 +333,7 @@ export function CurrentSession({
     sysWs.on('speaker_segment', (data) => {
       const d = data as { id: string; contact_id: string | null; status: string }
       if (d.contact_id && d.status === 'identified') {
-        setUtterances((prev) =>
-          prev.map((u) =>
-            u.speakerSegmentId === d.id ? { ...u, speakerId: d.contact_id } : u,
-          ),
-        )
+        setUtterances((prev) => updateSpeakerBySegment(prev, d.id, d.contact_id!))
       }
     })
 
@@ -414,7 +389,7 @@ export function CurrentSession({
         setShowLive(false)
         setDraftText(null)
         setUtterances((prev) =>
-          mergeLiveUtterance(prev, {
+          appendLiveUtterance(prev, {
             id: d.id,
             speakerId: d.speaker_contact_id,
             speakerSegmentId: d.speaker_segment_id,
@@ -442,11 +417,7 @@ export function CurrentSession({
       ws.on('speaker_segment', (data) => {
         const d = data as { id: string; contact_id: string | null; status: string }
         if (d.contact_id && d.status === 'identified') {
-          setUtterances((prev) =>
-            prev.map((u) =>
-              u.speakerSegmentId === d.id ? { ...u, speakerId: d.contact_id } : u,
-            ),
-          )
+          setUtterances((prev) => updateSpeakerBySegment(prev, d.id, d.contact_id!))
         }
       })
 

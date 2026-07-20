@@ -4,6 +4,7 @@ import { useScreen } from './hooks/useScreen'
 import { useTranslation } from 'react-i18next'
 import type { BackendStartupStatus } from './types/electron'
 import type { ScreenId, Utterance } from './types/domain'
+import { updateSpeakerBySegments } from './utils/liveTranscript'
 
 const AllSessions = lazy(() => import('./components/AllSessions').then(m => ({ default: m.AllSessions })))
 const Contacts = lazy(() => import('./components/Contacts').then(m => ({ default: m.Contacts })))
@@ -124,19 +125,10 @@ export function App() {
 
   const applyLiveResolution = useCallback((segmentIds: string[], contactId: string) => {
     let previousUtterances: Utterance[] = []
-    const idSet = new Set(segmentIds)
 
     setUtterances((current) => {
       previousUtterances = current
-      let changed = false
-      const next = current.map((utterance) => {
-        if (!utterance.speakerSegmentId || !idSet.has(utterance.speakerSegmentId)) {
-          return utterance
-        }
-        changed = true
-        return { ...utterance, speakerId: contactId }
-      })
-      return changed ? next : current
+      return updateSpeakerBySegments(current, segmentIds, contactId)
     })
 
     return () => {
