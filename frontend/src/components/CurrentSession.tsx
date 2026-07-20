@@ -236,11 +236,11 @@ export function CurrentSession({
   }, [recState])
 
   useEffect(() => {
-    if (transcriptRef.current) {
-      rowVirtualizer.measure()
-      if (showLive && utterances.length > 0) {
-        rowVirtualizer.scrollToIndex(utterances.length - 1, { align: 'end' })
-      }
+    if (showLive && transcriptRef.current && utterances.length > 0) {
+      // Row refs and ResizeObserver own measurement. Calling measure() here
+      // clears the measured-size cache and restores the 120px estimate,
+      // creating visible gaps between the shorter transcript rows.
+      rowVirtualizer.scrollToIndex(utterances.length - 1, { align: 'end' })
     }
   }, [utterances.length, showLive, rowVirtualizer])
 
