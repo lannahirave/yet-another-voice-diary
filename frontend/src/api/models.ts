@@ -1,11 +1,15 @@
 import type {
   ApiModelProgressEvent,
   ApiModelStatusMap,
+  ApiAvailableModelMap,
   ApiProviderStatus,
 } from '../types/api'
 import { BASE_URL, apiFetch } from './client'
 
 export const getModelStatus = () => apiFetch<ApiModelStatusMap>('/models/status')
+
+export const getAvailableModels = () =>
+  apiFetch<ApiAvailableModelMap>('/models/available')
 
 export const loadModel = (type: string) =>
   apiFetch<ApiProviderStatus>(`/models/${type}/load`, { method: 'POST' }, 120_000)

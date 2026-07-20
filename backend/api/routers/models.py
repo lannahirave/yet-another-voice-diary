@@ -24,6 +24,18 @@ log = logging.getLogger(__name__)
 # toward 0.95 over this window, then jumps to 1.0 on completion.
 _LOAD_RAMP_SECONDS = 10.0
 
+_AVAILABLE_MODELS = {
+    "asr": [
+        {"id": "tiny", "name": "whisper tiny", "size": "~39 MB", "quality": ""},
+        {"id": "medium", "name": "whisper medium", "size": "~1.5 GB", "quality": "settings.qualityGood"},
+        {"id": "large-v3-turbo", "name": "whisper large-v3-turbo", "size": "~4.5 GB", "quality": "settings.qualityRecommended"},
+    ],
+    "diarization": [
+        {"id": "pyannote", "name": "PyAnnote 3.1", "size": "~1–2 GB", "quality": "settings.qualityRecommended"},
+        {"id": "sortformer-v2.1", "name": "NVIDIA Streaming Sortformer 4spk v2.1", "size": "~1 GB", "quality": "settings.qualityAlternative"},
+    ],
+}
+
 
 @dataclass
 class _LoadState:
@@ -90,6 +102,12 @@ def model_status(request: Request):
         kind: _provider_status(kind, provider)
         for kind, provider in request.app.state.providers.items()
     }
+
+
+@router.get("/available", response_model=dict[str, list[dict[str, str]]])
+def available_models() -> dict[str, list[dict[str, str]]]:
+    """Return model choices and their practical memory estimates."""
+    return _AVAILABLE_MODELS
 
 
 def _run_load(kind: str, provider: object, load: _LoadState) -> None:

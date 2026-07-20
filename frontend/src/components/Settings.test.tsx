@@ -64,6 +64,7 @@ vi.mock('../api/config', () => ({
 }))
 
 vi.mock('../api/models', () => ({
+  getAvailableModels: vi.fn(async () => ({})),
   getModelStatus: vi.fn(async () => ({})),
   loadModel: vi.fn(async () => undefined),
   unloadModel: vi.fn(async () => undefined),

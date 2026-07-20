@@ -137,6 +137,15 @@ export interface ApiConfig {
 
 export type ApiModelStatusMap = Record<string, ApiProviderStatus>
 
+export interface ApiAvailableModel {
+  id: string
+  name: string
+  size: string
+  quality: string
+}
+
+export type ApiAvailableModelMap = Record<string, ApiAvailableModel[]>
+
 export interface ApiStorageInfo {
   db_path: string
   db_size_bytes: number

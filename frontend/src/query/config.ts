@@ -12,7 +12,7 @@ import {
   setThreshold,
   setUnloadAfterStop,
 } from '../api/config'
-import { getModelStatus, loadModel, unloadModel } from '../api/models'
+import { getAvailableModels, getModelStatus, loadModel, unloadModel } from '../api/models'
 import type { ApiConfig } from '../types/api'
 import { queryKeys } from './keys'
 
@@ -20,6 +20,14 @@ export function useConfigQuery() {
   return useQuery({
     queryKey: queryKeys.config.current(),
     queryFn: getConfig,
+  })
+}
+
+export function useAvailableModelsQuery() {
+  return useQuery({
+    queryKey: ['models', 'available'],
+    queryFn: getAvailableModels,
+    staleTime: Infinity,
   })
 }
 

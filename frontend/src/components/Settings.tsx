@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import {
   useBlocklistEnabledMutation,
   useConfigQuery,
+  useAvailableModelsQuery,
   useElevenLabsTokenMutation,
   useModelLifecycleMutation,
   useModelProgress,
@@ -432,6 +433,7 @@ export function Settings() {
   const [itnSelectedMaps, setItnSelectedMaps] = useState<string[]>([])
 
   const configQuery = useConfigQuery()
+  const availableModelsQuery = useAvailableModelsQuery()
   const storageQuery = useStorageInfoQuery()
   const selectProviderMutation = useSelectProviderMutation()
   const setThresholdMutation = useSetThresholdMutation()
@@ -485,9 +487,16 @@ export function Settings() {
   const diarizationProvider = providers.diarization
   const vadProvider = providers.vad
 
-  const asrModels = withCurrentFallback(ASR_MODELS, asrProvider)
+  const availableAsrModels: ModelDef[] = availableModelsQuery.data?.asr?.length
+    ? [ASR_MODELS[0], ...availableModelsQuery.data.asr.map((model) => ({ ...model, speed: '' }))]
+    : ASR_MODELS
+  const availableDiarizationModels: ModelDef[] = availableModelsQuery.data?.diarization?.length
+    ? availableModelsQuery.data.diarization.map((model) => ({ ...model, speed: '' }))
+    : DIAR_MODELS
+
+  const asrModels = withCurrentFallback(availableAsrModels, asrProvider)
   const embeddingModels = withCurrentFallback(EMBED_MODELS, embeddingProvider)
-  const diarizationModels = withCurrentFallback(DIAR_MODELS, diarizationProvider)
+  const diarizationModels = withCurrentFallback(availableDiarizationModels, diarizationProvider)
   const vadModels = withCurrentFallback(VAD_MODELS, vadProvider)
 
   const selectedAsrModel = asrProvider?.model_id ?? 'large-v3-turbo'
