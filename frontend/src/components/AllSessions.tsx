@@ -405,6 +405,19 @@ export function AllSessions() {
                   {t('allSessions.noUtterances')}
                 </div>
               )}
+              {utterancesQuery.hasNextPage && (
+                <button
+                  data-testid="session-load-more"
+                  type="button"
+                  onClick={() => void utterancesQuery.fetchNextPage()}
+                  disabled={utterancesQuery.isFetchingNextPage}
+                  style={asS.loadMoreBtn}
+                >
+                  {utterancesQuery.isFetchingNextPage
+                    ? t('allSessions.loadingMore')
+                    : t('allSessions.loadMore')}
+                </button>
+              )}
             </div>
           </>
         ) : (
@@ -565,6 +578,17 @@ const asS: Record<string, CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: 0,
+  },
+  loadMoreBtn: {
+    alignSelf: 'center',
+    margin: '14px 0 4px',
+    padding: '7px 14px',
+    border: '1px solid var(--border)',
+    borderRadius: 6,
+    background: 'var(--surface2)',
+    color: 'var(--text)',
+    fontSize: 12,
+    cursor: 'pointer',
   },
   uttRow: {
     display: 'flex',

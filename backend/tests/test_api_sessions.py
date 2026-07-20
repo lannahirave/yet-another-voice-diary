@@ -76,13 +76,35 @@ async def test_session_utterances(client):
     u = r.json()
     assert u["transcript"] == "привіт world"
 
+    for started_ms, transcript in ((2000, "second"), (3000, "third")):
+        r = await client.post(
+            f"/sessions/{session_id}/utterances",
+            json={
+                "session_id": session_id,
+                "started_ms": started_ms,
+                "ended_ms": started_ms + 1000,
+                "transcript": transcript,
+                "language": "uk",
+                "confidence": 0.9,
+            },
+        )
+        assert r.status_code == 201
+
     r = await client.get(f"/sessions/{session_id}/utterances")
     assert r.status_code == 200
-    assert len(r.json()) == 1
+    assert [item["transcript"] for item in r.json()] == [
+        "привіт world",
+        "second",
+        "third",
+    ]
+
+    r = await client.get(f"/sessions/{session_id}/utterances?limit=1&offset=1")
+    assert r.status_code == 200
+    assert [item["transcript"] for item in r.json()] == ["second"]
 
     # session summary now reflects the utterance
     r = await client.get(f"/sessions/{session_id}")
-    assert r.json()["utterance_count"] == 1
+    assert r.json()["utterance_count"] == 3
 
 
 @pytest.mark.asyncio

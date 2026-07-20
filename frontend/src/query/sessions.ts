@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { adaptSession, adaptUtterance } from '../api/adapters'
 import {
   deleteUtterance,
@@ -7,8 +7,13 @@ import {
   listUtterances,
 } from '../api/sessions'
 import type { ApiUtterance } from '../types/api'
-import type { Utterance } from '../types/domain'
 import { queryKeys } from './keys'
+
+export const SESSION_UTTERANCE_PAGE_SIZE = 50
+
+type SessionUtteranceCache =
+  | ApiUtterance[]
+  | { pages: ApiUtterance[][]; pageParams: number[] }
 
 export function useSessionsListQuery() {
   return useQuery({
@@ -20,13 +25,19 @@ export function useSessionsListQuery() {
 }
 
 export function useSessionUtterancesQuery(sessionId: string | null) {
-  return useQuery<ApiUtterance[], Error, Utterance[]>({
+  return useInfiniteQuery({
     queryKey: sessionId
       ? queryKeys.sessions.utterances(sessionId)
       : [...queryKeys.sessions.utterancesRoot(), 'disabled'] as const,
-    queryFn: () => listUtterances(sessionId as string),
+    queryFn: ({ pageParam }) =>
+      listUtterances(sessionId as string, pageParam, SESSION_UTTERANCE_PAGE_SIZE),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length < SESSION_UTTERANCE_PAGE_SIZE
+        ? undefined
+        : allPages.length * SESSION_UTTERANCE_PAGE_SIZE,
     enabled: !!sessionId,
-    select: (utterances) => utterances.map(adaptUtterance),
+    select: (pages) => pages.pages.flat().map(adaptUtterance),
   })
 }
 
@@ -64,11 +75,22 @@ export function useDeleteUtteranceMutation(sessionId: string | null) {
 
       const queryKey = queryKeys.sessions.utterances(sessionId)
       await queryClient.cancelQueries({ queryKey })
-      const previous = queryClient.getQueryData<ApiUtterance[]>(queryKey)
+      const previous = queryClient.getQueryData<SessionUtteranceCache>(queryKey)
 
-      queryClient.setQueryData<ApiUtterance[] | undefined>(
+      queryClient.setQueryData<SessionUtteranceCache | undefined>(
         queryKey,
-        (utterances) => utterances?.filter((utterance) => utterance.id !== utteranceId),
+        (data) => {
+          if (!data) return data
+          if (Array.isArray(data)) {
+            return data.filter((utterance) => utterance.id !== utteranceId)
+          }
+          return {
+            ...data,
+            pages: data.pages.map((page) =>
+              page.filter((utterance) => utterance.id !== utteranceId),
+            ),
+          }
+        },
       )
 
       return { queryKey, previous }

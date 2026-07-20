@@ -4,7 +4,7 @@ from __future__ import annotations
 import sqlite3
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ...identification.resolver import SpeakerResolver, SQLiteResolverStore
 from ...models import RecordingSession, SpeakerSegment, Utterance, VoiceProfile
@@ -74,11 +74,16 @@ def delete_session(session_id: str, conn: sqlite3.Connection = Depends(get_db)):
 
 
 @router.get("/{session_id}/utterances", response_model=list[UtteranceOut])
-def list_utterances(session_id: str, conn: sqlite3.Connection = Depends(get_db)):
+def list_utterances(
+    session_id: str,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    conn: sqlite3.Connection = Depends(get_db),
+):
     repo = SessionRepo(conn)
     if not repo.get_session(session_id):
         raise HTTPException(status_code=404, detail="session not found")
-    return repo.list_utterances(session_id)
+    return repo.list_utterances(session_id, limit=limit, offset=offset)
 
 
 @router.post(

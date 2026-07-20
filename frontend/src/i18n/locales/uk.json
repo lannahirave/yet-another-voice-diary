@@ -76,6 +76,8 @@
     "searchPlaceholder": "Пошук по транскрипту",
     "noUtterances": "Немає реплік",
     "selectSession": "Виберіть сесію",
+    "loadMore": "Завантажити ще",
+    "loadingMore": "Завантаження...",
     "exportJson": "Експорт JSON",
     "exportMd": "Експорт MD",
     "exportCsv": "Експорт CSV",

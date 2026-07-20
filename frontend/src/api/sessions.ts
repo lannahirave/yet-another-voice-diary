@@ -28,8 +28,10 @@ export const updateSession = (
 export const deleteSession = (id: string) =>
   apiFetch<void>(`/sessions/${id}`, { method: 'DELETE' })
 
-export const listUtterances = (sessionId: string) =>
-  apiFetch<ApiUtterance[]>(`/sessions/${sessionId}/utterances`)
+export const listUtterances = (sessionId: string, offset = 0, limit = 50) =>
+  apiFetch<ApiUtterance[]>(
+    `/sessions/${sessionId}/utterances?offset=${offset}&limit=${limit}`,
+  )
 
 export const getUtteranceCandidates = (utteranceId: string) =>
   apiFetch<ApiUtteranceCandidates>(`/sessions/utterances/${utteranceId}/candidates`)

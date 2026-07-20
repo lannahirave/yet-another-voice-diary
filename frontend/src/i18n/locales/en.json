@@ -74,6 +74,8 @@
     "searchPlaceholder": "Search transcripts",
     "noUtterances": "No utterances",
     "selectSession": "Select a session",
+    "loadMore": "Load more",
+    "loadingMore": "Loading...",
     "exportJson": "Export JSON",
     "exportMd": "Export MD",
     "exportCsv": "Export CSV",

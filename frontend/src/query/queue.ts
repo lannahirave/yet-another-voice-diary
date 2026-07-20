@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { adaptQueueCluster } from '../api/adapters'
 import { resolveQueueCluster, skipQueueCluster, deleteQueueCluster, listQueue, getQueueCount, getQueueSessions } from '../api/queue'
+import type { ApiUtterance } from '../types/api'
 import type { UnknownQueueItem, Utterance } from '../types/domain'
 import { queryKeys } from './keys'
 
@@ -17,16 +18,31 @@ interface ResolveQueueOptions {
   onApplyLiveResolution?: (segmentIds: string[], contactId: string) => (() => void) | void
 }
 
+type SessionUtteranceCache =
+  | Utterance[]
+  | { pages: ApiUtterance[][]; pageParams: number[] }
+
 function patchSessionUtterances(
-  utterances: Utterance[] | undefined,
+  cache: SessionUtteranceCache | undefined,
   segmentIds: string[],
   contactId: string,
-): Utterance[] | undefined {
-  if (!utterances) return utterances
+): SessionUtteranceCache | undefined {
+  if (!cache) return cache
 
   const idSet = new Set(segmentIds)
+  if (!Array.isArray(cache)) {
+    return {
+      ...cache,
+      pages: cache.pages.map((page) => page.map((utterance) =>
+        utterance.speaker_segment_id && idSet.has(utterance.speaker_segment_id)
+          ? { ...utterance, speaker_contact_id: contactId }
+          : utterance,
+      )),
+    }
+  }
+
   let changed = false
-  const next = utterances.map((utterance) => {
+  const next = cache.map((utterance) => {
     if (!utterance.speakerSegmentId || !idSet.has(utterance.speakerSegmentId)) {
       return utterance
     }
@@ -34,7 +50,7 @@ function patchSessionUtterances(
     return { ...utterance, speakerId: contactId }
   })
 
-  return changed ? next : utterances
+  return changed ? next : cache
 }
 
 export function useQueueListQuery(
@@ -84,7 +100,7 @@ export function useResolveQueueClusterMutation(options: ResolveQueueOptions = {}
       const previousQueue = queryClient.getQueriesData<UnknownQueueItem[]>({
         queryKey: queryKeys.queue.listRoot(),
       })
-      const previousSessionUtterances = queryClient.getQueriesData<Utterance[]>({
+      const previousSessionUtterances = queryClient.getQueriesData<SessionUtteranceCache>({
         queryKey: queryKeys.sessions.utterancesRoot(),
       })
       const rollbackLive = options.onApplyLiveResolution?.(cluster.segmentIds, contactId)
@@ -94,7 +110,7 @@ export function useResolveQueueClusterMutation(options: ResolveQueueOptions = {}
         (existing) => existing?.filter((item) => item.id !== cluster.id) ?? [],
       )
 
-      queryClient.setQueriesData<Utterance[]>(
+      queryClient.setQueriesData<SessionUtteranceCache>(
         { queryKey: queryKeys.sessions.utterancesRoot() },
         (existing) => patchSessionUtterances(existing, cluster.segmentIds, contactId),
       )

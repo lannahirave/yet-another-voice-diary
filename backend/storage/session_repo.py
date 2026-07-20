@@ -120,7 +120,14 @@ class SessionRepo:
 
     # ---- utterances ----
 
-    def list_utterances(self, session_id: str) -> list[dict]:
+    def list_utterances(
+        self, session_id: str, *, limit: int | None = None, offset: int = 0
+    ) -> list[dict]:
+        params: list[object] = [session_id]
+        pagination = ""
+        if limit is not None:
+            pagination = " LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
         cur = self.conn.execute(
             """
             SELECT u.id, u.session_id, u.started_ms, u.ended_ms, u.transcript,
@@ -130,8 +137,8 @@ class SessionRepo:
             LEFT JOIN speaker_segments ss ON ss.id = u.speaker_segment_id
             WHERE u.session_id = ?
             ORDER BY u.started_ms ASC
-            """,
-            (session_id,),
+            """ + pagination,
+            tuple(params),
         )
         return [self._utterance_row_to_dict(r) for r in cur.fetchall()]
 
