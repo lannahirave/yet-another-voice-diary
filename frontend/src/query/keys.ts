@@ -29,4 +29,8 @@ export const queryKeys = {
     current: () => ['config', 'current'] as const,
     storage: () => ['config', 'storage'] as const,
   },
+  models: {
+    status: () => ['models', 'status'] as const,
+    available: () => ['models', 'available'] as const,
+  },
 } as const

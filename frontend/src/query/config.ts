@@ -13,7 +13,7 @@ import {
   setUnloadAfterStop,
 } from '../api/config'
 import { getAvailableModels, getModelStatus, loadModel, unloadModel } from '../api/models'
-import type { ApiConfig } from '../types/api'
+import type { ApiConfig, ApiModelStatusMap } from '../types/api'
 import { queryKeys } from './keys'
 
 export function useConfigQuery() {
@@ -35,7 +35,7 @@ export function useAvailableModelsQuery() {
 export function useModelProgress(kind: string) {
   const queryClient = useQueryClient()
   const statusQuery = useQuery({
-    queryKey: ['models', 'status'],
+    queryKey: queryKeys.models.status(),
     queryFn: getModelStatus,
     refetchInterval: (query) => {
       const status = query.state.data
@@ -171,15 +171,24 @@ export function useModelLifecycleMutation() {
       type: string
       action: 'load' | 'unload'
     }) => {
-      if (action === 'load') {
-        await loadModel(type)
-      } else {
-        await unloadModel(type)
-      }
-      return getConfig()
+      const status = action === 'load' ? await loadModel(type) : await unloadModel(type)
+      return { status, config: await getConfig() }
     },
-    onSuccess: async (config) => {
-      queryClient.setQueryData<ApiConfig>(queryKeys.config.current(), config)
+    onSuccess: async ({ status, config }) => {
+      queryClient.setQueryData<ApiModelStatusMap>(
+        queryKeys.models.status(),
+        (current) => ({ ...current, [status.kind]: status }),
+      )
+      queryClient.setQueryData<ApiConfig>(queryKeys.config.current(), (current) => {
+        const next = config ?? current
+        if (!next) return next
+        return {
+          ...next,
+          providers: next.providers.map((provider) =>
+            provider.kind === status.kind ? status : provider,
+          ),
+        }
+      })
       await queryClient.invalidateQueries({ queryKey: queryKeys.config.current() })
     },
   })

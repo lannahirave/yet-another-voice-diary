@@ -66,8 +66,20 @@ vi.mock('../api/config', () => ({
 vi.mock('../api/models', () => ({
   getAvailableModels: vi.fn(async () => ({})),
   getModelStatus: vi.fn(async () => ({})),
-  loadModel: vi.fn(async () => undefined),
-  unloadModel: vi.fn(async () => undefined),
+  loadModel: vi.fn(async (kind: string) => ({
+    kind,
+    model_id: kind === 'vad' ? 'firered-stream-vad' : 'large-v3-turbo',
+    state: 'LOADED',
+    device: 'cpu',
+    error: null,
+  })),
+  unloadModel: vi.fn(async (kind: string) => ({
+    kind,
+    model_id: kind === 'vad' ? 'firered-stream-vad' : 'large-v3-turbo',
+    state: 'UNLOADED',
+    device: 'cpu',
+    error: null,
+  })),
 }))
 
 vi.mock('../api/contacts', () => ({
@@ -203,6 +215,14 @@ describe('Settings', () => {
     const loadButton = await screen.findByTestId('load-vad')
     expect(loadButton).toHaveProperty('disabled', false)
     expect(screen.queryByTestId('load-asr')).toBeNull()
+  })
+
+  it('switches the lifecycle button after a successful load', async () => {
+    renderSettings()
+    fireEvent.click(await screen.findByTestId('settings-tab-providers'))
+    fireEvent.click(await screen.findByTestId('load-asr'))
+
+    expect(await screen.findByTestId('unload-asr')).toBeDefined()
   })
 
   it('disables only the Silero offset threshold for FireRedVAD', async () => {
