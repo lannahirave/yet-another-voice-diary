@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from backend.config import BackendConfig
+
 pytest_plugins = ("backend.tests.api_fixtures",)
 
 
@@ -13,6 +17,23 @@ async def test_pipeline_config_roundtrips_itn_enabled(client):
 
     assert response.status_code == 200
     assert response.json()["itn_enabled"] is False
+
+
+async def test_pipeline_config_save_stays_out_of_user_config(client, app):
+    user_config = Path.home() / ".voice-diary" / "config.json"
+    before = user_config.read_bytes() if user_config.exists() else None
+
+    response = await client.post("/config/pipeline", json={"itn_enabled": False})
+
+    assert response.status_code == 200
+    after = user_config.read_bytes() if user_config.exists() else None
+    assert after == before
+
+    test_config = BackendConfig.default_path()
+    assert test_config != user_config
+    assert test_config.exists()
+    saved = BackendConfig.load(test_config)
+    assert saved.database.path == app.state.config.database.path
 
 
 async def test_config_includes_itn_maps_and_selected_defaults(client):

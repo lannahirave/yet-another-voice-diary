@@ -15,8 +15,14 @@ from backend.config import BackendConfig, DatabaseConfig, PipelineConfig, Provid
 
 
 @pytest.fixture()
-def app() -> Iterator[FastAPI]:
+def app(monkeypatch: pytest.MonkeyPatch) -> Iterator[FastAPI]:
     with tempfile.TemporaryDirectory() as tmpdir:
+        config_path = Path(tmpdir) / "config.json"
+        monkeypatch.setattr(
+            BackendConfig,
+            "default_path",
+            staticmethod(lambda: config_path),
+        )
         cfg = BackendConfig(
             database=DatabaseConfig(path=Path(tmpdir) / "test.db"),
             pipeline=PipelineConfig(),
