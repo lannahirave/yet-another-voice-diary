@@ -225,6 +225,23 @@ describe('Settings', () => {
     expect(await screen.findByTestId('unload-asr')).toBeDefined()
   })
 
+  it('displays preloaded providers as loaded in Settings', async () => {
+    const preloadedConfig: ApiConfig = {
+      ...baseConfig,
+      providers: baseConfig.providers.map((provider) => ({
+        ...provider,
+        state: 'LOADED',
+      })),
+    }
+    renderSettings(preloadedConfig)
+    fireEvent.click(await screen.findByTestId('settings-tab-providers'))
+
+    expect(screen.getByTestId('model-card-asr-large-v3-turbo')).toHaveTextContent(
+      'settings.stateLOADED',
+    )
+    expect(screen.getByTestId('unload-asr')).toBeDefined()
+  })
+
   it('disables only the Silero offset threshold for FireRedVAD', async () => {
     const fireRedConfig: ApiConfig = {
       ...baseConfig,
