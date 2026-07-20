@@ -71,8 +71,25 @@ def _startup_preload(app: FastAPI) -> None:
         _log.info("preloading %s model %s", kind, getattr(provider, "model_id", "?"))
 
 
+def _load_runtime_config(config: Optional[BackendConfig]) -> BackendConfig:
+    """Load and persist a portable config for companion processes.
+
+    The backend historically interpreted its default relative database path
+    against its working directory. Persisting that resolved path lets the
+    standalone MCP sidecar find the same diary from any launch directory.
+    Explicit configs supplied by tests or embedding callers remain untouched.
+    """
+    if config is not None:
+        return config
+    loaded = BackendConfig.load()
+    if loaded.database.path is not None:
+        loaded.database.path = loaded.database.path.expanduser().resolve()
+    loaded.save()
+    return loaded
+
+
 def create_app(config: Optional[BackendConfig] = None) -> FastAPI:
-    config = config or BackendConfig.load()
+    config = _load_runtime_config(config)
 
     db = Database(config.database)
     db.init_schema()

@@ -155,3 +155,15 @@ def test_electron_builder_packages_runtime_for_all_desktop_targets() -> None:
 
     backend_resource = next(item for item in resources if item["to"] == "backend")
     assert "pyproject.toml" in backend_resource["filter"]
+    assert "mcp/**/*" in backend_resource["filter"]
+
+
+def test_release_workflow_publishes_mcp_sidecars() -> None:
+    workflow = _read(".github/workflows/electron-distribution.yml")
+
+    assert "build-mcp:" in workflow
+    assert "--collect-all mcp" in workflow
+    assert "voice-diary-mcp-windows-x64.exe" in workflow
+    assert "voice-diary-mcp-macos" in workflow
+    assert "voice-diary-mcp-linux-x64" in workflow
+    assert 'notes_file="docs/releases/${GITHUB_REF_NAME}.md"' in workflow

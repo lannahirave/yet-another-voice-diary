@@ -108,6 +108,65 @@ Backend only:
 .venv-ml/bin/python -m backend.run
 ```
 
+## Connect an External Agent
+
+Voice Diary includes a local, read-only MCP server so external agents can
+retrieve diary information without starting the API or loading ML models. It
+exposes two tools:
+
+- `search_transcripts` searches transcript snippets with optional session,
+  contact, and language filters.
+- `search_diary` searches transcripts, session titles and notes, and known
+  contacts, grouped by session.
+
+Install the backend dependencies, then configure an MCP client to launch the
+server over stdio from the repository root:
+
+```json
+{
+  "mcpServers": {
+    "voice-diary": {
+      "command": "D:\\web_app\\.venv-ml\\Scripts\\python.exe",
+      "args": ["-m", "backend.mcp_server"],
+      "cwd": "D:\\web_app"
+    }
+  }
+}
+```
+
+An editable/source installation also provides the `voice-diary-mcp` command.
+
+GitHub Releases also provide standalone MCP sidecars for Windows, macOS, and
+Linux. Download the file for your platform, verify it against
+`SHA256SUMS.txt`, and point the external agent directly at the downloaded
+executable. On macOS and Linux, make it executable first with
+`chmod +x voice-diary-mcp-*`.
+
+Launch Voice Diary once before using the sidecar. Startup creates the database
+and records its absolute path in `~/.voice-diary/config.json`, allowing the
+sidecar to find the same diary regardless of where the executable was saved.
+
+```json
+{
+  "mcpServers": {
+    "voice-diary": {
+      "command": "C:\\Tools\\voice-diary-mcp-windows-x64.exe"
+    }
+  }
+}
+```
+
+An explicit config or database can be selected with `--config PATH` or
+`--database PATH`. The server opens SQLite in read-only mode, never applies
+migrations, and never exposes audio, embeddings, configuration, or arbitrary
+SQL. If the schema is outdated, open the current Voice Diary app once before
+connecting again.
+
+Connecting an external agent grants that agent access to sensitive transcript,
+session-note, and contact data returned by its searches. Only connect agents
+you trust. Release sidecars are standalone and do not expose a network port or
+start Voice Diary's ML runtime.
+
 Frontend only:
 
 ```bash

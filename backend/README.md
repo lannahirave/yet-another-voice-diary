@@ -83,6 +83,14 @@ python -m backend.run
 |--------|------|-------------|
 | GET | `/search?q=...&language=...&limit=50` | FTS5 full-text search with snippet highlighting |
 
+### MCP retrieval
+
+`python -m backend.mcp_server` starts a read-only stdio MCP server independently
+of FastAPI and the ML providers. `search_transcripts` returns concise attributed
+transcript hits; `search_diary` also searches session and contact metadata and
+groups matches by session. Use `--config PATH` or `--database PATH` to override
+the normal diary location.
+
 ### Config (`/config`)
 | Method | Path | Description |
 |--------|------|-------------|

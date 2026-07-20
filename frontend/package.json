@@ -69,6 +69,7 @@
           "pyproject.toml",
           "*.py",
           "api/**/*",
+          "mcp/**/*",
           "storage/**/*",
           "providers/**/*",
           "pipeline/**/*",

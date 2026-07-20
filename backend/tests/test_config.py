@@ -1,4 +1,5 @@
 """Tests for configuration."""
+import json
 from pathlib import Path
 
 from backend.config import (
@@ -7,6 +8,25 @@ from backend.config import (
     PipelineConfig,
     ProviderConfig,
 )
+
+
+def test_runtime_config_persists_absolute_database_path(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from backend.api.app import _load_runtime_config
+
+    config_path = tmp_path / "config.json"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        BackendConfig, "default_path", staticmethod(lambda: config_path)
+    )
+
+    loaded = _load_runtime_config(None)
+
+    expected = (tmp_path / "backend" / "voice_diary.db").resolve()
+    assert loaded.database.path == expected
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert Path(saved["database"]["path"]) == expected
 
 
 def test_default_config():
