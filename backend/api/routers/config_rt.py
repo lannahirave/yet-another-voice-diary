@@ -41,6 +41,15 @@ from ..schemas import (
 router = APIRouter()
 
 
+def _reject_during_refinement(request: Request) -> None:
+    manager = getattr(request.app.state, "refinement_manager", None)
+    if manager is not None and manager.has_active_job():
+        raise HTTPException(
+            status_code=409,
+            detail="provider changes are unavailable while refinement is running",
+        )
+
+
 def _mask_token(token: str) -> str:
     if not token:
         return "not set"
@@ -119,6 +128,7 @@ def get_config_rt(request: Request):
         language_allowlist_enabled=cfg.pipeline.language_allowlist_enabled,
         language_allowlist=cfg.pipeline.language_allowlist,
         language_confidence_threshold=cfg.pipeline.language_confidence_threshold,
+        recording_retention=cfg.pipeline.recording_retention,
         providers=[
             _provider_status(kind, provider) for kind, provider in providers.items()
         ],
@@ -142,6 +152,12 @@ def set_pipeline(payload: PipelineUpdate, request: Request):
     """
     pipeline = request.app.state.config.pipeline
     updates = payload.model_dump(exclude_unset=True)
+    retention = updates.get("recording_retention")
+    if retention is not None and retention not in {"off", "until_refined", "keep"}:
+        raise HTTPException(
+            status_code=400,
+            detail="recording_retention must be off, until_refined, or keep",
+        )
     selected_maps = updates.get("itn_selected_maps", None)
     invalid_maps = validate_selected_itn_maps(selected_maps) if "itn_selected_maps" in updates else []
     if invalid_maps:
@@ -192,6 +208,7 @@ def set_blocklist(payload: BlocklistUpdate, request: Request):
 
 @router.post("/device", response_model=ConfigOut)
 def set_device(payload: DeviceUpdate, request: Request):
+    _reject_during_refinement(request)
     allowed = {"auto", "cpu", "cuda", "mps"}
     if payload.value not in allowed:
         raise HTTPException(
@@ -249,6 +266,7 @@ def get_storage_info(request: Request):
 
 @router.post("/provider/{kind}", response_model=ConfigOut)
 def select_provider(kind: str, payload: ProviderSelect, request: Request):
+    _reject_during_refinement(request)
     providers = request.app.state.providers
     config = request.app.state.config
     if kind not in providers:

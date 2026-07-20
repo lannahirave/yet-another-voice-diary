@@ -18,6 +18,7 @@ export const queryKeys = {
     list: () => ['sessions', 'list'] as const,
     utterancesRoot: () => ['sessions', 'utterances'] as const,
     utterances: (sessionId: string) => ['sessions', 'utterances', sessionId] as const,
+    refinement: (sessionId: string) => ['sessions', 'refinement', sessionId] as const,
   },
   search: {
     all: ['search'] as const,

@@ -3,9 +3,9 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AllSessions } from './AllSessions'
 
-const { mockSessions, mockUpdateSession } = vi.hoisted(() => {
+const { mockSessions, mockUpdateSession, mockStartRefinement } = vi.hoisted(() => {
   const sessions = [
-    { id: 's1', title: '', started_at: '2026-04-29T10:00:00Z', ended_at: '2026-04-29T10:30:00Z', notes: '', language_hint: null, utterance_count: 3, speakers: [] },
+    { id: 's1', title: '', started_at: '2026-04-29T10:00:00Z', ended_at: '2026-04-29T10:30:00Z', notes: '', language_hint: null, utterance_count: 3, speakers: [], recording_available: true, recording_size_bytes: 32044, refinement_status: null },
     { id: 's2', title: 'Morning check-in', started_at: '2026-04-28T14:00:00Z', ended_at: '2026-04-28T14:45:00Z', notes: '', language_hint: null, utterance_count: 5, speakers: ['c1'] },
   ]
   const updateFn = vi.fn(async (id: string, payload: { title?: string }) => {
@@ -13,7 +13,15 @@ const { mockSessions, mockUpdateSession } = vi.hoisted(() => {
     if (s && payload.title !== undefined) s.title = payload.title
     return { ...s, ...payload }
   })
-  return { mockSessions: sessions, mockUpdateSession: updateFn }
+  return {
+    mockSessions: sessions,
+    mockUpdateSession: updateFn,
+    mockStartRefinement: vi.fn(async (sessionId: string) => ({
+      id: 'job-1', session_id: sessionId, status: 'queued', stage: 'queued',
+      progress: 0, current_source: null, processed_items: 0, total_items: 0,
+      error: null, cancel_requested: false, created_at: 1, started_at: null, completed_at: null,
+    })),
+  }
 })
 
 vi.mock('../api/sessions', async () => {
@@ -23,6 +31,8 @@ vi.mock('../api/sessions', async () => {
     listSessions: vi.fn().mockImplementation(() => Promise.resolve([...mockSessions])),
     updateSession: mockUpdateSession,
     listUtterances: vi.fn(() => Promise.resolve([])),
+    getRefinement: vi.fn(() => Promise.resolve(null)),
+    startRefinement: mockStartRefinement,
   }
 })
 
@@ -47,7 +57,7 @@ describe('AllSessions inline rename', () => {
     vi.clearAllMocks()
     mockSessions.length = 0
     mockSessions.push(
-      { id: 's1', title: '', started_at: '2026-04-29T10:00:00Z', ended_at: '2026-04-29T10:30:00Z', notes: '', language_hint: null, utterance_count: 3, speakers: [] },
+      { id: 's1', title: '', started_at: '2026-04-29T10:00:00Z', ended_at: '2026-04-29T10:30:00Z', notes: '', language_hint: null, utterance_count: 3, speakers: [], recording_available: true, recording_size_bytes: 32044, refinement_status: null },
       { id: 's2', title: 'Morning check-in', started_at: '2026-04-28T14:00:00Z', ended_at: '2026-04-28T14:45:00Z', notes: '', language_hint: null, utterance_count: 5, speakers: ['c1'] },
     )
   })
@@ -91,6 +101,14 @@ describe('AllSessions inline rename', () => {
     renderWithProviders()
     await waitForLoaded()
     expect(screen.getByText('2')).toBeDefined()
+  })
+
+  it('starts refinement for a retained completed recording', async () => {
+    renderWithProviders()
+    await waitForLoaded()
+    screen.getByTestId('start-refinement').click()
+    await waitFor(() => expect(mockStartRefinement).toHaveBeenCalledWith('s1'))
+    expect(await screen.findByText('Refinement queued')).toBeDefined()
   })
 
   it('renamed title persists after remount', async () => {

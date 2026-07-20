@@ -57,6 +57,7 @@ const config = (state: string): ApiConfig => ({
   language_allowlist_enabled: false,
   language_allowlist: 'en,uk',
   language_confidence_threshold: 0.5,
+  recording_retention: 'off',
 })
 
 function setup(initial: ApiConfig) {

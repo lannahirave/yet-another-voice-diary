@@ -9,6 +9,28 @@ export interface ApiSession {
   language_hint: string | null
   utterance_count: number
   speakers: string[]
+  recording_available?: boolean
+  recording_size_bytes?: number
+  refinement_status?: string | null
+}
+
+export type RecordingRetention = 'off' | 'until_refined' | 'keep'
+
+export interface ApiRefinementJob {
+  id: string
+  session_id: string
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  stage: 'queued' | 'vad' | 'diarization' | 'embedding' | 'transcription' | 'committing' | 'completed' | 'failed' | 'cancelled'
+  progress: number
+  current_source: string | null
+  processed_items: number
+  total_items: number
+  error: string | null
+  cancel_requested: boolean
+  created_at: number
+  started_at: number | null
+  completed_at: number | null
+  metrics: Record<string, number>
 }
 
 export interface ApiUtterance {
@@ -133,6 +155,7 @@ export interface ApiConfig {
   language_allowlist_enabled: boolean
   language_allowlist: string
   language_confidence_threshold: number
+  recording_retention: RecordingRetention
 }
 
 export type ApiModelStatusMap = Record<string, ApiProviderStatus>

@@ -2,12 +2,26 @@ import { startTransition, useCallback, useEffect, useMemo, useRef, useState } fr
 import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useContactsData } from '../query/contacts'
-import { useSessionUtterancesQuery, useSessionsListQuery, useDeleteUtteranceMutation } from '../query/sessions'
+import {
+  useCancelRefinementMutation,
+  useDeleteRecordingMutation,
+  useDeleteUtteranceMutation,
+  useRefinementQuery,
+  useSessionUtterancesQuery,
+  useSessionsListQuery,
+  useStartRefinementMutation,
+} from '../query/sessions'
 import { updateSession } from '../api/sessions'
 import { queryKeys } from '../query/keys'
 import { useQueryClient } from '@tanstack/react-query'
 import { Avatar } from './shared/Avatar'
 import { highlight } from '../utils/highlight'
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(0, Math.round(bytes / 1024))} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
 
 export function AllSessions() {
   const { t } = useTranslation()
@@ -35,8 +49,15 @@ export function AllSessions() {
   }, [sessions, selected])
 
   const utterancesQuery = useSessionUtterancesQuery(effectiveSelected)
+  const refinementQuery = useRefinementQuery(effectiveSelected)
+  const startRefinementMutation = useStartRefinementMutation(effectiveSelected)
+  const cancelRefinementMutation = useCancelRefinementMutation(effectiveSelected)
+  const deleteRecordingMutation = useDeleteRecordingMutation(effectiveSelected)
+  const refreshedJobRef = useRef<string | null>(null)
   const utterances = utterancesQuery.data ?? []
   const session = sessions.find((item) => item.id === effectiveSelected) ?? null
+  const refinement = refinementQuery.data ?? null
+  const refinementActive = refinement?.status === 'queued' || refinement?.status === 'running'
   const filteredUtterances = utterances.filter(
     (utterance) =>
       !searchText ||
@@ -71,6 +92,19 @@ export function AllSessions() {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [exportDropdownOpen])
+
+  useEffect(() => {
+    if (!effectiveSelected || refinement?.status !== 'completed') return
+    if (refreshedJobRef.current === refinement.id) return
+    refreshedJobRef.current = refinement.id
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.sessions.list() }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.sessions.utterances(effectiveSelected) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.queue.all }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.search.all }),
+    ])
+  }, [effectiveSelected, queryClient, refinement])
 
   const doExport = (fmt?: 'json' | 'md' | 'csv') => {
     if (!session) return
@@ -326,7 +360,69 @@ export function AllSessions() {
                   </div>
                 )}
               </div>
+              {session.recordingAvailable && (
+                <div style={asS.refinementActions}>
+                  {refinementActive ? (
+                    <button
+                      data-testid="cancel-refinement"
+                      style={asS.refineBtn}
+                      disabled={cancelRefinementMutation.isPending || refinement?.cancel_requested}
+                      onClick={() => void cancelRefinementMutation.mutateAsync()}
+                    >
+                      {t('allSessions.cancelRefinement')}
+                    </button>
+                  ) : (
+                    <button
+                      data-testid="start-refinement"
+                      style={asS.refineBtn}
+                      disabled={startRefinementMutation.isPending}
+                      onClick={() => void startRefinementMutation.mutateAsync()}
+                    >
+                      {refinement ? t('allSessions.refineAgain') : t('allSessions.refine')}
+                    </button>
+                  )}
+                  {!refinementActive && (
+                    <button
+                      data-testid="delete-recording"
+                      style={asS.secondaryBtn}
+                      disabled={deleteRecordingMutation.isPending}
+                      onClick={() => {
+                        if (window.confirm(t('allSessions.deleteRecording'))) {
+                          void deleteRecordingMutation.mutateAsync()
+                        }
+                      }}
+                    >
+                      {t('allSessions.deleteRecording')}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
+            {(session.recordingAvailable || refinement) && (
+              <div data-testid="refinement-status" style={asS.refinementStatus}>
+                <span>
+                  {refinement?.status === 'queued'
+                    ? t('allSessions.refinementQueued')
+                    : refinement?.status === 'running'
+                      ? t('allSessions.refinementRunning', {
+                          stage: refinement.stage,
+                          progress: Math.round(refinement.progress * 100),
+                        })
+                      : refinement?.status === 'completed'
+                        ? t('allSessions.refinementCompleted')
+                        : refinement?.status === 'failed'
+                          ? `${t('allSessions.refinementFailed')}${refinement.error ? `: ${refinement.error}` : ''}`
+                          : refinement?.status === 'cancelled'
+                            ? t('allSessions.refinementCancelled')
+                            : t('allSessions.recordingSize', { size: formatBytes(session.recordingSizeBytes ?? 0) })}
+                </span>
+                {refinementActive && (
+                  <div style={asS.progressTrack}>
+                    <div style={{ ...asS.progressFill, width: `${Math.round((refinement?.progress ?? 0) * 100)}%` }} />
+                  </div>
+                )}
+              </div>
+            )}
             <div style={asS.transcriptBody}>
               {filteredUtterances.map((utterance) => {
                 const contact = contactById(utterance.speakerId)
@@ -441,6 +537,12 @@ export function AllSessions() {
 
 const asS: Record<string, CSSProperties> = {
   root: { display: 'flex', height: '100vh', background: 'var(--bg)', fontFamily: 'var(--sans)' },
+  refinementActions: { display: 'flex', gap: 6, alignItems: 'center' },
+  refineBtn: { border: 0, borderRadius: 5, padding: '7px 10px', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontSize: 11.5 },
+  secondaryBtn: { border: '1px solid var(--border)', borderRadius: 5, padding: '7px 9px', background: 'var(--surface)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11.5 },
+  refinementStatus: { padding: '9px 18px', borderBottom: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 11.5 },
+  progressTrack: { height: 3, marginTop: 6, borderRadius: 2, background: 'var(--surface3)', overflow: 'hidden' },
+  progressFill: { height: '100%', background: 'var(--accent)', transition: 'width 0.2s ease' },
   list: {
     width: 308,
     borderRight: '1px solid var(--border)',
@@ -549,6 +651,8 @@ const asS: Record<string, CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 10,
+    flexWrap: 'wrap',
     flexShrink: 0,
     background: 'var(--surface)',
   },

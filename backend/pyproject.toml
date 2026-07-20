@@ -67,6 +67,7 @@ packages = [
   "backend.providers.itn",
   "backend.pipeline",
   "backend.identification",
+  "backend.refinement",
   "backend.mcp",
 ]
 package-dir = {"backend" = "."}

@@ -3,6 +3,10 @@ import { adaptSession, adaptUtterance } from '../api/adapters'
 import {
   deleteUtterance,
   identifyUtterance,
+  getRefinement,
+  startRefinement,
+  cancelRefinement,
+  deleteSessionRecording,
   listSessions,
   listUtterances,
 } from '../api/sessions'
@@ -110,6 +114,50 @@ export function useDeleteUtteranceMutation(sessionId: string | null) {
           }),
         ])
       }
+    },
+  })
+}
+
+export function useRefinementQuery(sessionId: string | null) {
+  return useQuery({
+    queryKey: sessionId
+      ? queryKeys.sessions.refinement(sessionId)
+      : [...queryKeys.sessions.all, 'refinement', 'disabled'] as const,
+    queryFn: () => getRefinement(sessionId as string),
+    enabled: !!sessionId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status
+      return status === 'queued' || status === 'running' ? 1000 : false
+    },
+  })
+}
+
+export function useStartRefinementMutation(sessionId: string | null) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => startRefinement(sessionId as string),
+    onSuccess: (job) => {
+      queryClient.setQueryData(queryKeys.sessions.refinement(job.session_id), job)
+    },
+  })
+}
+
+export function useCancelRefinementMutation(sessionId: string | null) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => cancelRefinement(sessionId as string),
+    onSuccess: (job) => {
+      if (sessionId) queryClient.setQueryData(queryKeys.sessions.refinement(sessionId), job)
+    },
+  })
+}
+
+export function useDeleteRecordingMutation(sessionId: string | null) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => deleteSessionRecording(sessionId as string),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.sessions.list() })
     },
   })
 }

@@ -3,6 +3,7 @@ import type {
   ApiUtterance,
   ApiUtteranceCandidates,
   ApiUtteranceIdentifyResponse,
+  ApiRefinementJob,
 } from '../types/api'
 import { apiFetch } from './client'
 
@@ -44,3 +45,15 @@ export const identifyUtterance = (utteranceId: string, contactId: string) =>
 
 export const deleteUtterance = (utteranceId: string) =>
   apiFetch<void>(`/sessions/utterances/${utteranceId}`, { method: 'DELETE' })
+
+export const getRefinement = (sessionId: string) =>
+  apiFetch<ApiRefinementJob | null>(`/sessions/${sessionId}/refinement`)
+
+export const startRefinement = (sessionId: string) =>
+  apiFetch<ApiRefinementJob>(`/sessions/${sessionId}/refinement`, { method: 'POST' })
+
+export const cancelRefinement = (sessionId: string) =>
+  apiFetch<ApiRefinementJob | null>(`/sessions/${sessionId}/refinement/cancel`, { method: 'POST' })
+
+export const deleteSessionRecording = (sessionId: string) =>
+  apiFetch<void>(`/sessions/${sessionId}/recording`, { method: 'DELETE' })

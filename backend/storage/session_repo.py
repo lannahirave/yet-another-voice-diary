@@ -37,7 +37,11 @@ class SessionRepo:
             SELECT s.id, s.title, s.started_at, s.ended_at, s.notes, s.language_hint,
                    (SELECT COUNT(*) FROM utterances u WHERE u.session_id = s.id) AS utterance_count,
                    (SELECT GROUP_CONCAT(DISTINCT ss.contact_id)
-                      FROM speaker_segments ss WHERE ss.session_id = s.id) AS speaker_ids
+                      FROM speaker_segments ss WHERE ss.session_id = s.id) AS speaker_ids,
+                   EXISTS(SELECT 1 FROM session_recordings sr WHERE sr.session_id = s.id) AS recording_available,
+                   COALESCE((SELECT SUM(sr.size_bytes) FROM session_recordings sr WHERE sr.session_id = s.id), 0) AS recording_size_bytes,
+                   (SELECT rj.status FROM refinement_jobs rj WHERE rj.session_id = s.id
+                    ORDER BY rj.created_at DESC LIMIT 1) AS refinement_status
             FROM sessions s
             ORDER BY s.started_at DESC
             """
@@ -50,7 +54,11 @@ class SessionRepo:
             SELECT s.id, s.title, s.started_at, s.ended_at, s.notes, s.language_hint,
                    (SELECT COUNT(*) FROM utterances u WHERE u.session_id = s.id) AS utterance_count,
                    (SELECT GROUP_CONCAT(DISTINCT ss.contact_id)
-                      FROM speaker_segments ss WHERE ss.session_id = s.id) AS speaker_ids
+                      FROM speaker_segments ss WHERE ss.session_id = s.id) AS speaker_ids,
+                   EXISTS(SELECT 1 FROM session_recordings sr WHERE sr.session_id = s.id) AS recording_available,
+                   COALESCE((SELECT SUM(sr.size_bytes) FROM session_recordings sr WHERE sr.session_id = s.id), 0) AS recording_size_bytes,
+                   (SELECT rj.status FROM refinement_jobs rj WHERE rj.session_id = s.id
+                    ORDER BY rj.created_at DESC LIMIT 1) AS refinement_status
             FROM sessions s
             WHERE s.id = ?
             """,
@@ -110,6 +118,13 @@ class SessionRepo:
         return self.get_session(session_id)
 
     def delete_session(self, session_id: str) -> bool:
+        self.conn.execute(
+            "DELETE FROM unknown_queue WHERE speaker_segment_id IN "
+            "(SELECT id FROM speaker_segments WHERE session_id = ?)",
+            (session_id,),
+        )
+        self.conn.execute("DELETE FROM voice_profiles WHERE source_session_id = ?", (session_id,))
+        self.conn.execute("DELETE FROM pipeline_errors WHERE session_id = ?", (session_id,))
         self.conn.execute("DELETE FROM utterances WHERE session_id = ?", (session_id,))
         self.conn.execute(
             "DELETE FROM speaker_segments WHERE session_id = ?", (session_id,)
@@ -337,6 +352,9 @@ class SessionRepo:
             "language_hint": row["language_hint"],
             "utterance_count": row["utterance_count"],
             "speakers": speakers,
+            "recording_available": bool(row["recording_available"]) if "recording_available" in row.keys() else False,
+            "recording_size_bytes": int(row["recording_size_bytes"] or 0) if "recording_size_bytes" in row.keys() else 0,
+            "refinement_status": row["refinement_status"] if "refinement_status" in row.keys() else None,
         }
 
     @staticmethod

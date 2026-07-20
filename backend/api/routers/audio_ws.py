@@ -28,6 +28,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from ...identification.resolver import SpeakerResolver, SQLiteResolverStore
 from ...models import RecordingSession, SpeakerSegment, Utterance
 from ...pipeline.coordinator import PipelineCoordinator
+from ...refinement.recording import SessionAudioRecorder, save_recording_metadata
 from ..diagnostics import DebugSession, start_debug_session
 from ...storage.queue_repo import QueueRepo
 from ...storage.session_repo import SessionRepo
@@ -244,6 +245,8 @@ async def stream(ws: WebSocket) -> None:
     coord.on("error", _on_error_client)
 
     session: RecordingSession | None = None
+    recorder: SessionAudioRecorder | None = None
+    recording_registered = False
     sender_task: asyncio.Task | None = None
     debug: DebugSession | None = None
     debug_hooks_attached = False
@@ -286,6 +289,21 @@ async def stream(ws: WebSocket) -> None:
                     elif payload.get("title") and existing["title"] != payload["title"]:
                         session_repo.update_session(sid, title=payload["title"])
                     coord.start_session(session)
+                    with ws.app.state.active_recordings_lock:
+                        counts = ws.app.state.active_recordings
+                        counts[sid] = counts.get(sid, 0) + 1
+                    recording_registered = True
+                    if ws.app.state.config.pipeline.recording_retention != "off":
+                        try:
+                            recorder = SessionAudioRecorder(sid, track, SAMPLE_RATE)
+                        except OSError as exc:
+                            recorder = None
+                            queue.put_nowait({
+                                "type": "error",
+                                "code": "RECORDING_RETENTION_FAILURE",
+                                "component": "recording",
+                                "message": str(exc),
+                            })
                     # SUPER DEBUG: capture config snapshot and start diagnostics
                     if debug is None:
                         cfg = ws.app.state.config
@@ -325,6 +343,15 @@ async def stream(ws: WebSocket) -> None:
                     )
                     continue
                 audio_np = np.frombuffer(msg["bytes"], dtype=np.float32).copy()
+                if recorder is not None and not recorder.write(audio_np):
+                    queue.put_nowait({
+                        "type": "error",
+                        "code": "RECORDING_RETENTION_FAILURE",
+                        "component": "recording",
+                        "message": "whole-session audio could not be written; live recording continues",
+                    })
+                    recorder.abort()
+                    recorder = None
                 if _dev_audio_enabled() and audio_np.size > 0:
                     _dev_audio_total_samples += audio_np.size
                     if _dev_audio_total_samples <= _DEV_AUDIO_MAX_SAMPLES:
@@ -338,6 +365,16 @@ async def stream(ws: WebSocket) -> None:
         pass
     finally:
         if session is not None:
+            if recorder is not None:
+                saved_recording = recorder.finish()
+                if saved_recording is not None:
+                    path, duration_ms, size_bytes = saved_recording
+                    try:
+                        save_recording_metadata(
+                            db_conn, session.id, track, path, duration_ms, size_bytes
+                        )
+                    except Exception:
+                        log.exception("failed to persist retained recording metadata")
             try:
                 saved_audio = _write_dev_audio_wav(
                     session.id, dev_audio_chunks, track=track
@@ -372,6 +409,14 @@ async def stream(ws: WebSocket) -> None:
                             provider.unload()
             except Exception:
                 log.exception("provider unload-after-stop failed")
+        if recording_registered and session is not None:
+            with ws.app.state.active_recordings_lock:
+                counts = ws.app.state.active_recordings
+                remaining = max(0, counts.get(session.id, 1) - 1)
+                if remaining:
+                    counts[session.id] = remaining
+                else:
+                    counts.pop(session.id, None)
         coord.off("utterance", on_utt)
         coord.off("speaker_segment", on_seg)
         coord.off("error", _on_error_client)

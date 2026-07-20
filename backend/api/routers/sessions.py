@@ -20,6 +20,7 @@ from ..schemas import (
     UtteranceIdentifyRequest,
     UtteranceIdentifyResponse,
     UtteranceOut,
+    RefinementJobOut,
 )
 
 router = APIRouter()
@@ -66,10 +67,66 @@ def update_session(
 
 
 @router.delete("/{session_id}", status_code=204)
-def delete_session(session_id: str, conn: sqlite3.Connection = Depends(get_db)):
+def delete_session(
+    session_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        request.app.state.refinement_manager.delete_recordings(session_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    conn.execute("DELETE FROM refinement_utterances WHERE job_id IN (SELECT id FROM refinement_jobs WHERE session_id = ?)", (session_id,))
+    conn.execute("DELETE FROM refinement_speaker_segments WHERE job_id IN (SELECT id FROM refinement_jobs WHERE session_id = ?)", (session_id,))
+    conn.execute("DELETE FROM refinement_jobs WHERE session_id = ?", (session_id,))
+    conn.execute("DELETE FROM session_recordings WHERE session_id = ?", (session_id,))
+    conn.commit()
     ok = SessionRepo(conn).delete_session(session_id)
     if not ok:
         raise HTTPException(status_code=404, detail="session not found")
+    return None
+
+
+@router.post("/{session_id}/refinement", response_model=RefinementJobOut, status_code=202)
+def start_refinement(
+    session_id: str,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    session = SessionRepo(conn).get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="session not found")
+    if session["ended_at"] is None:
+        raise HTTPException(status_code=409, detail="recording session is still active")
+    try:
+        return request.app.state.refinement_manager.submit(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/{session_id}/refinement", response_model=RefinementJobOut | None)
+def get_refinement(session_id: str, request: Request):
+    return request.app.state.refinement_manager.latest(session_id)
+
+
+@router.post("/{session_id}/refinement/cancel", response_model=RefinementJobOut | None)
+def cancel_refinement(session_id: str, request: Request):
+    job = request.app.state.refinement_manager.cancel(session_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="active refinement job not found")
+    return job
+
+
+@router.delete("/{session_id}/recording", status_code=204)
+def delete_recording(session_id: str, request: Request):
+    try:
+        deleted = request.app.state.refinement_manager.delete_recordings(session_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail="recording not found")
     return None
 
 

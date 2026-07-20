@@ -45,6 +45,7 @@ const baseConfig: ApiConfig = {
   language_allowlist_enabled: false,
   language_allowlist: 'en,uk',
   language_confidence_threshold: 0.5,
+  recording_retention: 'off',
 }
 
 vi.mock('../api/config', () => ({
@@ -215,6 +216,17 @@ describe('Settings', () => {
     const loadButton = await screen.findByTestId('load-vad')
     expect(loadButton).toHaveProperty('disabled', false)
     expect(screen.queryByTestId('load-asr')).toBeNull()
+  })
+
+  it('persists full-session recording retention', async () => {
+    renderSettings()
+    fireEvent.click(await screen.findByTestId('settings-tab-storage'))
+    fireEvent.change(await screen.findByTestId('recording-retention-select'), {
+      target: { value: 'until_refined' },
+    })
+    await waitFor(() => {
+      expect(setPipeline).toHaveBeenCalledWith({ recording_retention: 'until_refined' })
+    })
   })
 
   it('switches the lifecycle button after a successful load', async () => {

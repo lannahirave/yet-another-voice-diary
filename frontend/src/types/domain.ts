@@ -30,6 +30,9 @@ export interface Session {
   languages: Language[]
   speakers: string[]
   preview: string
+  recordingAvailable?: boolean
+  recordingSizeBytes?: number
+  refinementStatus?: string | null
 }
 
 export type AudioSource = 'mic' | 'system'

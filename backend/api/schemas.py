@@ -29,6 +29,9 @@ class SessionOut(BaseModel):
     language_hint: Optional[str] = None
     utterance_count: int = 0
     speakers: list[str] = Field(default_factory=list)
+    recording_available: bool = False
+    recording_size_bytes: int = 0
+    refinement_status: Optional[str] = None
 
 
 class UtteranceOut(BaseModel):
@@ -207,6 +210,7 @@ class ConfigOut(BaseModel):
     language_allowlist_enabled: bool = False
     language_allowlist: str = "en,uk"
     language_confidence_threshold: float = 0.5
+    recording_retention: str = "off"
 
 
 class ThresholdUpdate(BaseModel):
@@ -238,6 +242,24 @@ class PipelineUpdate(BaseModel):
     language_allowlist_enabled: Optional[bool] = None
     language_allowlist: Optional[str] = None
     language_confidence_threshold: Optional[float] = None
+    recording_retention: Optional[str] = None
+
+
+class RefinementJobOut(BaseModel):
+    id: str
+    session_id: str
+    status: str
+    stage: str
+    progress: float
+    current_source: Optional[str] = None
+    processed_items: int = 0
+    total_items: int = 0
+    error: Optional[str] = None
+    cancel_requested: bool = False
+    created_at: int
+    started_at: Optional[int] = None
+    completed_at: Optional[int] = None
+    metrics: dict[str, float] = Field(default_factory=dict)
 
 
 class UnloadAfterStopUpdate(BaseModel):

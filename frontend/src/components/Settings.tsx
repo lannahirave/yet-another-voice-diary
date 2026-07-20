@@ -15,7 +15,7 @@ import {
   useStorageInfoQuery,
   useUnloadAfterStopMutation,
 } from '../query/config'
-import type { ApiProviderStatus } from '../types/api'
+import type { ApiProviderStatus, RecordingRetention } from '../types/api'
 import { Toggle } from './shared/Toggle'
 import { MultiSelect } from './shared/MultiSelect'
 import type { MultiSelectOption } from './shared/MultiSelect'
@@ -468,6 +468,7 @@ export function Settings() {
   const [langConfidenceThreshold, setLangConfidenceThreshold] = useState(0.5)
   const [itnEnabled, setItnEnabled] = useState(true)
   const [itnSelectedMaps, setItnSelectedMaps] = useState<string[]>([])
+  const [recordingRetention, setRecordingRetention] = useState<RecordingRetention>('off')
 
   const configQuery = useConfigQuery()
   const availableModelsQuery = useAvailableModelsQuery()
@@ -507,6 +508,7 @@ export function Settings() {
       setLangConfidenceThreshold(config.language_confidence_threshold ?? 0.5)
       setItnEnabled(config.itn_enabled ?? true)
       setItnSelectedMaps(config.itn_selected_maps ?? [])
+      setRecordingRetention(config.recording_retention ?? 'off')
       setActionError(null)
     }
   }, [config])
@@ -1425,6 +1427,27 @@ export function Settings() {
         {active === 'storage' && (
           <>
             <SectionTitle>{t('settings.storage')}</SectionTitle>
+            <div style={stS.settingRow}>
+              <div style={{ flex: 1 }}>
+                <div style={stS.settingName}>{t('settings.recordingRetention')}</div>
+                <div style={stS.settingDesc}>{t('settings.recordingRetentionDesc')}</div>
+              </div>
+              <select
+                data-testid="recording-retention-select"
+                value={recordingRetention}
+                disabled={loadingConfig || !config || savingPipeline}
+                onChange={(event) => {
+                  const next = event.target.value as RecordingRetention
+                  setRecordingRetention(next)
+                  void commitPipeline({ recording_retention: next })
+                }}
+                style={stS.select}
+              >
+                <option value="off">{t('settings.retentionOff')}</option>
+                <option value="until_refined">{t('settings.retentionUntilRefined')}</option>
+                <option value="keep">{t('settings.retentionKeep')}</option>
+              </select>
+            </div>
             <div data-testid="storage-info" style={stS.infoBox}>
               {(
                 [
@@ -1541,6 +1564,15 @@ export function Settings() {
 }
 
 const stS: Record<string, CSSProperties> = {
+  select: {
+    minWidth: 220,
+    padding: '8px 10px',
+    border: '1px solid var(--border)',
+    borderRadius: 6,
+    background: 'var(--surface)',
+    color: 'var(--text)',
+    fontSize: 12,
+  },
   root: {
     display: 'flex',
     height: '100vh',

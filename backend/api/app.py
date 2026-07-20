@@ -14,10 +14,13 @@ from ..pipeline.coordinator import PipelineCoordinator
 from ..providers.diarization import create_diarization_provider
 from ..providers.embedding import ECAPATDNNEmbeddingProvider
 from ..providers.vad import create_vad_provider
+from ..refinement.service import RefinementManager
+from ..refinement.recording import cleanup_partial_recordings
 from ..storage.database import Database
 from ..storage.fts_migration import register_fts_migration
 from ..storage.migrations import MigrationRunner
 from ..storage.pipeline_errors_migration import register_pipeline_errors_migration
+from ..storage.refinement_migration import register_refinement_migration
 from ..storage.speaker_segment_diarization_model_migration import (
     register_speaker_segment_diarization_model_migration,
 )
@@ -30,7 +33,12 @@ from .routers import audio_ws, config_rt, contacts, models, queue, search, sessi
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    yield
+    try:
+        yield
+    finally:
+        manager = getattr(app.state, "refinement_manager", None)
+        if manager is not None:
+            manager.shutdown()
 
 
 def _startup_preload(app: FastAPI) -> None:
@@ -89,7 +97,10 @@ def _load_runtime_config(config: Optional[BackendConfig]) -> BackendConfig:
 
 
 def create_app(config: Optional[BackendConfig] = None) -> FastAPI:
+    use_default_runtime = config is None
     config = _load_runtime_config(config)
+    if use_default_runtime:
+        cleanup_partial_recordings()
 
     db = Database(config.database)
     db.init_schema()
@@ -99,6 +110,7 @@ def create_app(config: Optional[BackendConfig] = None) -> FastAPI:
     register_voice_profile_metadata_migration(runner)
     register_speaker_segment_diarization_model_migration(runner)
     register_pipeline_errors_migration(runner)
+    register_refinement_migration(runner)
     runner.apply_pending()
     db.close()
 
@@ -132,6 +144,9 @@ def create_app(config: Optional[BackendConfig] = None) -> FastAPI:
         "embedding": embedding,
         "vad": vad,
     }
+    app.state.active_recordings = {}
+    app.state.active_recordings_lock = threading.Lock()
+    app.state.refinement_manager = RefinementManager(app)
 
     if config.providers.preload_on_start:
         _startup_preload(app)

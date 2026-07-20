@@ -152,6 +152,9 @@ def _run_load(kind: str, provider: object, load: _LoadState) -> None:
 
 @router.post("/{kind}/load", response_model=ProviderStatus)
 def load_model(kind: str, request: Request):
+    manager = getattr(request.app.state, "refinement_manager", None)
+    if manager is not None and manager.has_active_job():
+        raise HTTPException(status_code=409, detail="models are in use by refinement")
     provider = _provider(request, kind)
     load = _states(request)[kind]
 
@@ -200,6 +203,9 @@ def load_model(kind: str, request: Request):
 
 @router.post("/{kind}/unload", response_model=ProviderStatus)
 def unload_model(kind: str, request: Request):
+    manager = getattr(request.app.state, "refinement_manager", None)
+    if manager is not None and manager.has_active_job():
+        raise HTTPException(status_code=409, detail="models are in use by refinement")
     provider = _provider(request, kind)
     load = _states(request)[kind]
     if _provider_state(provider) == "LOADING":

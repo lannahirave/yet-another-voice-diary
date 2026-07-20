@@ -191,6 +191,13 @@ class PipelineConfig:
     language is in the allowlist.
     """
 
+    recording_retention: str = "off"
+    """Whole-session audio retention: ``off``, ``until_refined``, or ``keep``."""
+
+    def __post_init__(self) -> None:
+        if self.recording_retention not in {"off", "until_refined", "keep"}:
+            self.recording_retention = "off"
+
 
 @dataclass
 class ProviderConfig:

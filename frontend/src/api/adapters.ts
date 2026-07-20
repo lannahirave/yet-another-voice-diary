@@ -108,6 +108,9 @@ export function adaptSession(api: ApiSession): Session {
     languages: api.language_hint === 'EN' ? ['EN'] : api.language_hint === 'UK' ? ['UK'] : [],
     speakers: api.speakers,
     preview: '',
+    recordingAvailable: api.recording_available ?? false,
+    recordingSizeBytes: api.recording_size_bytes ?? 0,
+    refinementStatus: api.refinement_status ?? null,
   }
 }
 
