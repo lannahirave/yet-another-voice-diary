@@ -22,6 +22,20 @@ from .compat import suppress_known_ml_warnings
 
 log = logging.getLogger(__name__)
 
+# Language codes supported by OpenAI Whisper's multilingual tokenizer.
+WHISPER_LANGUAGE_CODES = frozenset({
+    "af", "am", "ar", "as", "az", "ba", "be", "bg", "bn", "bo", "br",
+    "bs", "ca", "cs", "cy", "da", "de", "el", "en", "es", "et", "eu",
+    "fa", "fi", "fo", "fr", "fy", "ga", "gd", "gl", "gu", "ha", "haw",
+    "he", "hi", "hr", "ht", "hu", "hy", "id", "is", "it", "ja", "jw",
+    "ka", "kk", "km", "kn", "ko", "la", "lb", "ln", "lo", "lt", "lv",
+    "mg", "mi", "mk", "ml", "mn", "mr", "ms", "mt", "my", "ne", "nl",
+    "nn", "no", "oc", "pa", "pl", "ps", "pt", "ro", "ru", "sa", "sd",
+    "si", "sk", "sl", "sn", "so", "sq", "sr", "su", "sv", "sw", "ta",
+    "te", "th", "tk", "tl", "tr", "tt", "uk", "ur", "uz", "vi", "yi",
+    "yo", "zh",
+})
+
 
 class WhisperASRProvider:
     """Whisper ASR wrapper with lazy model load."""

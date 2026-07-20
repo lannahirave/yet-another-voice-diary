@@ -6,7 +6,7 @@ import types
 
 import numpy as np
 
-from backend.providers.asr import WhisperASRProvider
+from backend.providers.asr import WHISPER_LANGUAGE_CODES, WhisperASRProvider
 
 
 def test_transformers_model_aliases_match_whisper_hub_ids():
@@ -27,6 +27,22 @@ def test_generate_kwargs_preserve_transcribe_task_and_language_hint():
         "task": "transcribe",
         "language": "uk",
     }
+
+
+def test_all_whisper_language_codes_are_valid_language_hints():
+    for language in WHISPER_LANGUAGE_CODES:
+        assert WhisperASRProvider._generate_kwargs(language) == {
+            "task": "transcribe",
+            "language": language,
+        }
+
+
+def test_requested_russian_and_european_languages_are_supported():
+    requested = {
+        "ru", "bg", "hr", "sr", "sl", "bs", "mk", "sq", "el", "lt",
+        "lv", "et", "is", "ga", "cy", "ca", "gl", "eu", "mt",
+    }
+    assert requested <= WHISPER_LANGUAGE_CODES
 
 
 def test_silent_audio_returns_empty_without_loading_model():
