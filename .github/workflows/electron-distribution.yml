@@ -217,6 +217,7 @@ jobs:
           import pathlib
           import subprocess
           import asyncio
+          import tempfile
 
           from mcp import ClientSession, StdioServerParameters
           from mcp.client.stdio import stdio_client
@@ -239,15 +240,24 @@ jobs:
               raise SystemExit("MCP sidecar help output is invalid")
 
           async def verify_protocol() -> None:
-              parameters = StdioServerParameters(command=str(binary.resolve()), args=[])
-              async with stdio_client(parameters) as (read, write):
-                  async with ClientSession(read, write) as session:
-                      await session.initialize()
-                      tools = await session.list_tools()
-                      names = {tool.name for tool in tools.tools}
-                      expected = {"search_transcripts", "search_diary"}
-                      if names != expected:
-                          raise SystemExit(f"Unexpected MCP tools: {sorted(names)}")
+              database_file = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+              database_path = pathlib.Path(database_file.name)
+              database_file.close()
+              try:
+                  parameters = StdioServerParameters(
+                      command=str(binary.resolve()),
+                      args=["--database", str(database_path)],
+                  )
+                  async with stdio_client(parameters) as (read, write):
+                      async with ClientSession(read, write) as session:
+                          await session.initialize()
+                          tools = await session.list_tools()
+                          names = {tool.name for tool in tools.tools}
+                          expected = {"search_transcripts", "search_diary"}
+                          if names != expected:
+                              raise SystemExit(f"Unexpected MCP tools: {sorted(names)}")
+              finally:
+                  database_path.unlink(missing_ok=True)
 
           asyncio.run(verify_protocol())
 
