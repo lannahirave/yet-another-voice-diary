@@ -1,4 +1,0 @@
-interface:
-  display_name: "Electron Playwright Debug"
-  short_description: "Debug Electron app crashes and flows"
-  default_prompt: "Use $electron-playwright-debug to reproduce and isolate this Electron app bug."

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Publish Application"
-  short_description: "Release the app through GitHub"
-  default_prompt: "Use $publish-application to derive the next app version and publish a verified GitHub release."
