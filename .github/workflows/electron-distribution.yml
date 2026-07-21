@@ -339,15 +339,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_IS_PRERELEASE: ${{ contains(github.ref_name, '-alpha.') || contains(github.ref_name, '-beta.') || contains(github.ref_name, '-rc.') }}
         run: |
-          release_files=(
-            release-assets/*.exe
-            release-assets/*.dmg
-            release-assets/*.AppImage
-            release-assets/*.deb
-            release-assets/voice-diary-mcp-macos
-            release-assets/voice-diary-mcp-linux-x64
-            release-assets/SHA256SUMS.txt
-          )
+          release_files=(release-assets/*)
           notes_file="docs/releases/${GITHUB_REF_NAME}.md"
           test -f "$notes_file"
           release_options=(
